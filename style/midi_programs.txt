@@ -1,5 +1,4 @@
 Piano
-0 Acoustic Grand Piano
 1 Acoustic Grand Piano
 2 Bright Acoustic Piano
 3 Electric Grand Piano

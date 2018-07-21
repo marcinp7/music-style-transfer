@@ -24,7 +24,7 @@ def parse_programs(path, group=None):
             m = re.match(r'([0-9]+) (.*)', line)
             if m:
                 program, name = m.groups()
-                program2instrument[int(program)] = {
+                program2instrument[int(program)-1] = {
                     'group': group,
                     'name': name,
                 }
@@ -39,8 +39,6 @@ program2instrument = parse_programs(get_path('midi_programs.txt'))
 def get_instrument_name(program, channel=0):
     if channel == 9:
         return 'Percussion'
-    if program == 0:
-        program = 1
     return program2instrument[program]['name']
 
 
@@ -175,6 +173,6 @@ def split_channels(mid):
                 if any(msg.type == 'note_on' for msg in channel['messages'])]
 
     for channel in channels:
-        channel['instrument_name'] = get_instrument_name(channel['program']+1, channel['index'])
+        channel['instrument_name'] = get_instrument_name(channel['program'], channel['index'])
 
     return channels, info
