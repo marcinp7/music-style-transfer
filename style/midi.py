@@ -131,6 +131,10 @@ def split_channels(mid):
         'text',
         'instrument_name',
         'aftertouch',
+        'polytouch',
+        'cue_marker',
+        'unknown_meta',
+        'sequence_number',
     ]
 
     tempo = None
@@ -153,7 +157,6 @@ def split_channels(mid):
             info['time_signature'] = ts
         elif msg.type == 'key_signature':
             if played_channels and info.get('key') != msg.key:
-                # print('2')
                 return None, None
             info['key'] = msg.key
         elif msg.type == 'set_tempo':
@@ -178,7 +181,6 @@ def split_channels(mid):
             channels[msg.channel]['messages'].append(msg)
             if msg.type == 'note_on':
                 if msg.channel in non_playable_channels:
-                    # print('1')
                     return None, None
                 played_channels.add(msg.channel)
         else:
@@ -218,17 +220,20 @@ def channel2notes(info, channel):
             if pitch in pitch2note:
                 note = pitch2note[pitch]
                 note['end_time'] = msg.time
-                note['duration'] = note['end_time'] - note['time']
                 del pitch2note[pitch]
             if msg.type == 'note_on':
                 note = dict(
                     pitch=pitch,
                     velocity=msg.velocity,
                     time=msg.time,
+                    end_time=msg.time,
                     time_sec=mido.tick2second(msg.time, info['ticks_per_beat'], info['tempo'])
                 )
                 notes.append(note)
                 pitch2note[pitch] = note
+
+    for note in notes:
+        note['duration'] = note['end_time'] - note['time']
 
     return notes
 
