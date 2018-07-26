@@ -102,13 +102,20 @@ def merge_tracks(tracks):
     return msgs
 
 
+# todo: allow multiple instruments per channel
 def split_channels(mid):
     info = {
         'ticks_per_beat': mid.ticks_per_beat,
         'bpm': [],
+        'time_signature': {
+            'numerator': 4,
+            'denominator': 4,
+            'value': 1.,
+        }
     }
-    channels = defaultdict(lambda: {'messages': []})
+    channels = defaultdict(lambda: {'messages': [], 'program': 0})
     played_channels = set()
+    non_playable_channels = set()
 
     messages_to_ignore = [
         'smpte_offset',
@@ -118,26 +125,36 @@ def split_channels(mid):
         'track_name',
         'copyright',
         'lyrics',
+        'marker',
+        'sequencer_specific',
+        'channel_prefix',
+        'text',
+        'instrument_name',
+        'aftertouch',
     ]
 
     tempo = None
     tempo_change_time = 0
     tempo2time = defaultdict(int)
 
-    for msg in merge_tracks(mid.tracks):
+    for msg in list(merge_tracks(mid.tracks)):
         msg = copy(msg)
         if msg.type in messages_to_ignore:
             continue
 
         if msg.type == 'time_signature':
-            assert not played_channels
-            info['time_signature'] = {
+            ts = info['time_signature'] = {
                 'numerator': msg.numerator,
                 'denominator': msg.denominator,
                 'value': msg.numerator / msg.denominator
             }
+            if ts != info['time_signature']:
+                assert not played_channels
+            info['time_signature'] = ts
         elif msg.type == 'key_signature':
-            assert not played_channels
+            if played_channels and info.get('key') != msg.key:
+                # print('2')
+                return None, None
             info['key'] = msg.key
         elif msg.type == 'set_tempo':
             if tempo:
@@ -150,14 +167,19 @@ def split_channels(mid):
             if msg.control == 10:
                 channels[msg.channel]['pan'] = msg.value
         elif msg.type == 'program_change':
-            assert msg.channel not in played_channels
+            if (channels[msg.channel]['program'] != msg.program and
+                    msg.channel in played_channels):
+                non_playable_channels.add(msg.channel)
             channels[msg.channel]['program'] = msg.program
         elif msg.type in ['note_on', 'note_off', 'pitchwheel']:
             if msg.type == 'note_on' and msg.velocity == 0:
                 msg = Message('note_off', channel=msg.channel, note=msg.note,
                               velocity=msg.velocity, time=msg.time)
             channels[msg.channel]['messages'].append(msg)
-            if msg.type in ['note_on', 'note_off']:
+            if msg.type == 'note_on':
+                if msg.channel in non_playable_channels:
+                    # print('1')
+                    return None, None
                 played_channels.add(msg.channel)
         else:
             raise Exception(f'Unknown message type: {msg.type}')
@@ -169,6 +191,8 @@ def split_channels(mid):
     tempo2time = {k: v for k, v in tempo2time.items() if v}
     info['tempo2time'] = tempo2time
     info['tempo'] = max(tempo2time.items(), key=lambda x: x[1])[0]
+    if info['tempo'] is None:
+        return None, None
     info['bpm'] = int(mido.tempo2bpm(info['tempo']))
     info['n_bars'] = info['duration'] / info['ticks_per_bar']
 
@@ -185,22 +209,7 @@ def split_channels(mid):
     return channels, info
 
 
-def quantize_channel(info, channel, beat_divisors=[8, 3]):
-    def ticks2loc(ticks):
-        bar, ticks = divmod(ticks, info['ticks_per_bar'])
-        beat, ticks = divmod(ticks, info['ticks_per_beat'])
-
-        return bar, beat, ticks
-
-    divisor2ticks = {divisor: info['ticks_per_beat'] / divisor for divisor in beat_divisors}
-
-    def note_quantizations(time, duration=None):
-        # todo: use numpy
-        for divisor, ticks in divisor2ticks.items():
-            qtime, time_error = round_number(time, ticks)
-            total_error = abs(time_error)
-            yield (qtime, divisor), total_error
-
+def channel2notes(info, channel):
     notes = []
     pitch2note = {}
     for msg in channel['messages']:
@@ -220,6 +229,25 @@ def quantize_channel(info, channel, beat_divisors=[8, 3]):
                 )
                 notes.append(note)
                 pitch2note[pitch] = note
+
+    return notes
+
+
+def quantize_notes(info, notes, beat_divisors=[8, 3]):
+    def ticks2loc(ticks):
+        bar, ticks = divmod(ticks, info['ticks_per_bar'])
+        beat, ticks = divmod(ticks, info['ticks_per_beat'])
+
+        return bar, beat, ticks
+
+    divisor2ticks = {divisor: info['ticks_per_beat'] / divisor for divisor in beat_divisors}
+
+    def note_quantizations(time, duration=None):
+        # todo: use numpy
+        for divisor, ticks in divisor2ticks.items():
+            qtime, time_error = round_number(time, ticks)
+            total_error = abs(time_error)
+            yield (qtime, divisor), total_error
 
     for note in notes:
         time = note['time']
@@ -258,3 +286,16 @@ def dequantize_channel(info, channel_info, quantized_channel):
     channel = copy(channel_info)
     channel['messages'] = sorted(messages, key=lambda x: x.time)
     return channel
+
+
+def merge_channels(channels):
+    merged_channel = copy(channels[0])
+    merged_channel['messages'] = []
+    channel_idx = merged_channel['index']
+    for channel in channels:
+        for msg in channel['messages']:
+            msg = copy(msg)
+            msg.channel = channel_idx
+            merged_channel['messages'].append(msg)
+    merged_channel['messages'] = sorted(merged_channel['messages'], key=lambda x: x.time)
+    return merged_channel
