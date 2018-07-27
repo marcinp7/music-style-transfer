@@ -26,22 +26,24 @@ def parse_programs(path, group=None):
             m = re.match(r'([0-9]+) (.*)', line)
             if m:
                 program, name = m.groups()
-                program2instrument[int(program)-1] = {
-                    'group': group,
-                    'name': name,
-                }
-            else:
-                group = line
+                program2instrument[int(program)-1] = name
     return program2instrument
 
 
 program2instrument = parse_programs(get_path('midi_programs.txt'))
+program2instrument[-1] = 'Percussion'
 
 
-def get_instrument_name(program, channel=0):
+def get_instrument_id(program, channel=0):
     if channel == 9:
-        return 'Percussion'
-    return program2instrument[program]['name']
+        return -1
+    return program
+
+
+# def get_instrument_name(program, channel=0):
+#     if channel == 9:
+#         return 'Percussion'
+#     return program2instrument[program]['name']
 
 
 def play_midi(mid, portname=None):
@@ -206,15 +208,28 @@ def split_channels(mid):
                 if any(msg.type == 'note_on' for msg in channel['messages'])]
 
     for channel in channels:
-        channel['instrument_name'] = get_instrument_name(channel['program'], channel['index'])
+        channel['instrument_id'] = get_instrument_id(channel['program'], channel['index'])
+        channel['instrument_name'] = program2instrument[channel['instrument_id']]
 
     return channels, info
 
 
+notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+semitones2note = dict(enumerate(notes))
+
+
+def note_number2note(n):
+    octave, semitones = divmod(n, 12)
+    return semitones2note[semitones], octave - 1
+
+
 def channel2notes(info, channel):
-    notes = []
+    messages = channel['messages']
+    channel = {k: v for k, v in channel.items() if k != 'messages'}
+    channel['notes'] = []
+
     pitch2note = {}
-    for msg in channel['messages']:
+    for msg in messages:
         if msg.type in ['note_on', 'note_off']:
             pitch = msg.note
             if pitch in pitch2note:
@@ -222,20 +237,23 @@ def channel2notes(info, channel):
                 note['end_time'] = msg.time
                 del pitch2note[pitch]
             if msg.type == 'note_on':
+                note, octave = note_number2note(pitch)
                 note = dict(
                     pitch=pitch,
+                    note=note,
+                    octave=octave,
                     velocity=msg.velocity,
                     time=msg.time,
                     end_time=msg.time,
                     time_sec=mido.tick2second(msg.time, info['ticks_per_beat'], info['tempo'])
                 )
-                notes.append(note)
+                channel['notes'].append(note)
                 pitch2note[pitch] = note
 
-    for note in notes:
+    for note in channel['notes']:
         note['duration'] = note['end_time'] - note['time']
 
-    return notes
+    return channel
 
 
 def quantize_notes(info, notes, beat_divisors=[8, 3]):

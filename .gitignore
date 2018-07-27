@@ -93,5 +93,6 @@ ENV/
 /*.ipynb
 *.mid
 other/
+_cache/
 
 run_notebook.bat
