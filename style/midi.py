@@ -10,6 +10,7 @@ from py_utils.math import round_number
 import mido
 from mido import Message, MetaMessage, MidiFile, MidiTrack
 
+from style.scales import semitones2note
 
 here = os.path.dirname(__file__)
 
@@ -212,10 +213,6 @@ def split_channels(mid):
         channel['instrument_name'] = program2instrument[channel['instrument_id']]
 
     return channels, info
-
-
-notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-semitones2note = dict(enumerate(notes))
 
 
 def note_number2note(n):
