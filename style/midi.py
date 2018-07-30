@@ -1,10 +1,11 @@
 from copy import copy
+import math
 import os
 import re
 
 from collections import defaultdict
 from fractions import Fraction
-from py_utils import flatten
+from py_utils import flatten, replace_rvalue
 from py_utils.math import round_number
 
 import mido
@@ -41,10 +42,12 @@ def get_instrument_id(program, channel=0):
     return program
 
 
-# def get_instrument_name(program, channel=0):
-#     if channel == 9:
-#         return 'Percussion'
-#     return program2instrument[program]['name']
+def is_sound_effect(instrument_id):
+    return instrument_id > 119
+
+
+def is_pitched(instrument_id):
+    return instrument_id >= 0 and not is_sound_effect(instrument_id)
 
 
 def play_midi(mid, portname=None):
@@ -57,7 +60,11 @@ def play_midi(mid, portname=None):
             output.reset()
 
 
-def create_midi(info, *channels):
+def create_midi(info, *channels, max_delta_time=math.inf):
+    max_delta_time = mido.second2tick(max_delta_time, info['ticks_per_beat'], info['tempo'])
+    if math.isfinite(max_delta_time):
+        max_delta_time = int(max_delta_time)
+
     mid = MidiFile()
     track = MidiTrack()
     mid.tracks.append(track)
@@ -85,9 +92,12 @@ def create_midi(info, *channels):
     time = 0
     for msg in msgs:
         msg = copy(msg)
-        time, msg.time = msg.time, msg.time - time
+        delta_time = min(msg.time - time, max_delta_time)
+        time = msg.time
+        msg.time = delta_time
         track.append(msg)
-    track.append(MetaMessage('end_of_track', time=info['duration'] - time))
+    delta_time = min(info['duration'] - time, max_delta_time)
+    track.append(MetaMessage('end_of_track', time=delta_time))
 
     return mid
 
@@ -106,6 +116,7 @@ def merge_tracks(tracks):
 
 
 # todo: allow multiple instruments per channel
+@replace_rvalue({None: ([], None)})
 def split_channels(mid):
     info = {
         'ticks_per_beat': mid.ticks_per_beat,
@@ -160,7 +171,7 @@ def split_channels(mid):
             info['time_signature'] = ts
         elif msg.type == 'key_signature':
             if played_channels and info.get('key') != msg.key:
-                return None, None
+                return None
             info['key'] = msg.key
         elif msg.type == 'set_tempo':
             if tempo:
@@ -184,7 +195,7 @@ def split_channels(mid):
             channels[msg.channel]['messages'].append(msg)
             if msg.type == 'note_on':
                 if msg.channel in non_playable_channels:
-                    return None, None
+                    return None
                 played_channels.add(msg.channel)
         else:
             raise Exception(f'Unknown message type: {msg.type}')
@@ -197,7 +208,7 @@ def split_channels(mid):
     info['tempo2time'] = tempo2time
     info['tempo'] = max(tempo2time.items(), key=lambda x: x[1])[0]
     if info['tempo'] is None:
-        return None, None
+        return None
     info['bpm'] = int(mido.tempo2bpm(info['tempo']))
     info['n_bars'] = info['duration'] / info['ticks_per_bar']
 
@@ -224,6 +235,7 @@ def channel2notes(info, channel):
     messages = channel['messages']
     channel = {k: v for k, v in channel.items() if k != 'messages'}
     channel['notes'] = []
+    find_notes = is_pitched(channel['instrument_id'])
 
     pitch2note = {}
     for msg in messages:
@@ -234,9 +246,8 @@ def channel2notes(info, channel):
                 note['end_time'] = msg.time
                 del pitch2note[pitch]
             if msg.type == 'note_on':
-                note, octave = note_number2note(pitch)
+                note, octave = note_number2note(pitch) if find_notes else (str(pitch), None)
                 note = dict(
-                    pitch=pitch,
                     note=note,
                     octave=octave,
                     velocity=msg.velocity,
