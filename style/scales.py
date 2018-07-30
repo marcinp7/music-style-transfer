@@ -1,6 +1,9 @@
 import numpy as np
 
+import mido
+
 from py_utils.math import cross_entropy, normalize_dist
+from py_utils import group_by
 
 notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 semitones2note = dict(enumerate(notes))
@@ -82,15 +85,27 @@ major_mode = Mode([2, 2, 1, 2, 2, 2, 1])
 minor_mode = create_mode(major_mode, shift=-2)
 all_modes = [create_mode(major_mode, shift) for shift in range(len(Mode.names))]
 
+
+def get_notes_dist(info, nchannel):
+    note2time = group_by(nchannel['notes'], 'note', func=lambda xs: sum(x['duration'] for x in xs))
+    note2time = {note: mido.tick2second(
+        time, info['ticks_per_beat'], info['tempo']) for note, time in note2time.items()}
+    for note in notes:
+        if note not in note2time:
+            note2time[note] = 0
+    note2time['instrument'] = nchannel['instrument_name']
+    return note2time
+
+
 target_mode_dist = np.array([0.21, 0.11, 0.16, 0.13, 0.16, 0.13, 0.10])
 
 
-def get_scales(note2time=None, sound_dist=None, modes=None, degrees=None):
+def get_scales(note2time=None, notes_dist=None, modes=None, degrees=None):
     modes = modes or all_modes
     degrees = degrees or list(range(1, 8))
-    if sound_dist is None:
-        sound_dist = np.array([note2time.get(note, 0) for note in notes])
-        sound_dist /= sound_dist.sum()
+    if notes_dist is None:
+        notes_dist = np.array([note2time.get(note, 0) for note in notes])
+        normalize_dist(notes_dist)
 
     degrees = [d - 1 for d in degrees]
     target_dist = target_mode_dist[degrees]
@@ -100,7 +115,7 @@ def get_scales(note2time=None, sound_dist=None, modes=None, degrees=None):
     for i, note in enumerate(notes):
         for mode in modes:
             intervals = (np.asarray(mode.absolute_intervals) + i) % 12
-            sample_dist = sound_dist[intervals]
+            sample_dist = notes_dist[intervals]
             coverage = sample_dist.sum()
             sample_dist = sample_dist[degrees]
             normalize_dist(sample_dist)
@@ -111,6 +126,7 @@ def get_scales(note2time=None, sound_dist=None, modes=None, degrees=None):
                 'cross_entropy': cross_entropy(sample_dist, target_dist),
                 'dist': sample_dist,
             })
+
     for d in data:
         d['loss'] = d['cross_entropy'] * (1 - d['coverage'])
 
