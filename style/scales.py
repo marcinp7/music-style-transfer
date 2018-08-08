@@ -6,7 +6,8 @@ from py_utils.math import cross_entropy, normalize_dist
 from py_utils import group_by
 
 notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-semitones2note = dict(enumerate(notes))
+interval2note = dict(enumerate(notes))
+note2interval = {note: interval for interval, note in interval2note.items()}
 
 intervals2chord = {
     (0, 4, 7): 'M',
@@ -52,6 +53,17 @@ class Mode:
         for interval in self.intervals[:-1]:
             self.absolute_intervals.append(self.absolute_intervals[-1] + interval)
 
+        self.interval2degree = {}
+        for degree, interval in enumerate(self.absolute_intervals):
+            self.interval2degree[interval] = degree + 1
+
+        prev_degree = 1
+        for interval in range(12):
+            if interval in self.interval2degree:
+                prev_degree = self.interval2degree[interval]
+            else:
+                self.interval2degree[interval] = prev_degree + .5
+
     @property
     def name(self):
         return self.shift2name[self.shift % len(self.names)]
@@ -72,8 +84,11 @@ class Mode:
     def chords(self):
         return [self.get_chord(i) for i in range(len(self))]
 
+    def get_degree(self, interval):
+        return self.interval2degree[interval % 12]
+
     def __repr__(self):
-        return f'{self.name} mode (intervals: {self.intervals}, chords: {self.chords})'
+        return f'{self.name} mode'
 
 
 def create_mode(mode, shift):
@@ -86,18 +101,29 @@ minor_mode = create_mode(major_mode, shift=-2)
 all_modes = [create_mode(major_mode, shift) for shift in range(len(Mode.names))]
 
 
-def get_notes_dist(info, nchannel):
-    note2time = group_by(nchannel['notes'], 'note', func=lambda xs: sum(x['duration'] for x in xs))
+def get_notes_dist(info, nchannel, include_volume=True):
+    note2time = group_by(nchannel['notes'], 'note', func=lambda xs: sum(
+        x['duration'] * x['velocity'] for x in xs))
     note2time = {note: mido.tick2second(
         time, info['ticks_per_beat'], info['tempo']) for note, time in note2time.items()}
-    for note in notes:
-        if note not in note2time:
-            note2time[note] = 0
+    for note in note2time:
+        if note in note2time:
+            note2time[note] /= 127  # max velocity
+            if include_volume:
+                note2time[note] *= nchannel['volume'] / 127
     note2time['instrument'] = nchannel['instrument_name']
     return note2time
 
 
-target_mode_dist = np.array([0.21, 0.11, 0.16, 0.13, 0.16, 0.13, 0.10])
+major_dist = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
+major_dist = major_dist[major_mode.absolute_intervals]
+normalize_dist(major_dist)
+
+minor_dist = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
+minor_dist = minor_dist[minor_mode.absolute_intervals]
+normalize_dist(minor_dist)
+
+target_mode_dist = (major_dist + minor_dist) / 2
 
 
 def get_scales(note2time=None, notes_dist=None, modes=None, degrees=None):
@@ -122,13 +148,13 @@ def get_scales(note2time=None, notes_dist=None, modes=None, degrees=None):
             data.append({
                 'coverage': coverage,
                 'tonic': note,
-                'mode': mode.name,
+                'mode': mode,
                 'cross_entropy': cross_entropy(sample_dist, target_dist),
                 'dist': sample_dist,
             })
 
     for d in data:
-        d['loss'] = d['cross_entropy'] * (1 - d['coverage'])
+        d['loss'] = d['cross_entropy'] * (2 - d['coverage'])
 
     return data
 
