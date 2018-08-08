@@ -117,7 +117,7 @@ def merge_tracks(tracks):
 
 # todo: allow multiple instruments per channel
 @replace_rvalue({None: ([], None)})
-def split_channels(mid):
+def split_channels(mid, max_time=1e6):
     info = {
         'ticks_per_beat': mid.ticks_per_beat,
         'bpm': [],
@@ -127,7 +127,7 @@ def split_channels(mid):
             'value': 1.,
         }
     }
-    channels = defaultdict(lambda: {'messages': [], 'program': 0})
+    channels = defaultdict(lambda: {'messages': [], 'program': 0, 'volume': 96})
     played_channels = set()
     non_playable_channels = set()
 
@@ -156,6 +156,8 @@ def split_channels(mid):
     tempo2time = defaultdict(int)
 
     for msg in list(merge_tracks(mid.tracks)):
+        if msg.time > max_time:
+            return None
         msg = copy(msg)
         if msg.type in messages_to_ignore:
             continue
@@ -180,6 +182,9 @@ def split_channels(mid):
             tempo_change_time = msg.time
         elif msg.type == 'control_change':
             if msg.control == 7:
+                if (channels[msg.channel]['volume'] != msg.value and
+                        msg.channel in played_channels):
+                    non_playable_channels.add(msg.channel)
                 channels[msg.channel]['volume'] = msg.value
             if msg.control == 10:
                 channels[msg.channel]['pan'] = msg.value
@@ -231,7 +236,7 @@ def note_number2note(n):
     return semitones2note[semitones], octave - 1
 
 
-def channel2notes(info, channel):
+def channel2nchannel(info, channel):
     messages = channel['messages']
     channel = {k: v for k, v in channel.items() if k != 'messages'}
     channel['notes'] = []
@@ -248,6 +253,7 @@ def channel2notes(info, channel):
             if msg.type == 'note_on':
                 note, octave = note_number2note(pitch) if find_notes else (str(pitch), None)
                 note = dict(
+                    pitch=pitch,
                     note=note,
                     octave=octave,
                     velocity=msg.velocity,
