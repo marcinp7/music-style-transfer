@@ -90,9 +90,11 @@ ENV/
 # Rope project settings
 .ropeproject
 
-/*.ipynb
-*.mid
-other/
-_cache/
+/other
+/data
 
-run_notebook.bat
+/run_notebook*
+/*.ipynb
+
+_cache/
+*.mid
