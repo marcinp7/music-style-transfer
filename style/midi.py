@@ -6,7 +6,7 @@ import re
 
 from collections import defaultdict
 from fractions import Fraction
-from py_utils import flatten, replace_rvalue
+from py_utils import flatten, replace_none, none_as_tuple
 from py_utils.math import round_number
 
 import mido
@@ -117,7 +117,7 @@ def merge_tracks(tracks):
 
 
 # todo: allow multiple instruments per channel
-@replace_rvalue({None: ([], None)})
+@replace_none(([], None))
 def split_channels(mid, max_time=1e6):
     info = {
         'ticks_per_beat': mid.ticks_per_beat,
