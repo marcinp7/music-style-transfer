@@ -6,7 +6,7 @@ import re
 
 from collections import defaultdict
 from fractions import Fraction
-from py_utils import flatten, replace_none, none_as_tuple
+from py_utils import flatten, replace_none
 from py_utils.math import round_number
 
 import mido
@@ -114,6 +114,44 @@ def merge_tracks(tracks):
             msgs.append(msg)
     msgs = sorted(msgs, key=lambda x: x.time)
     return msgs
+
+
+def merge_channels(channels):
+    merged_channel = copy(channels[0])
+    merged_channel['messages'] = []
+    channel_idx = merged_channel['index']
+    for channel in channels:
+        for msg in channel['messages']:
+            msg = copy(msg)
+            msg.channel = channel_idx
+            merged_channel['messages'].append(msg)
+    merged_channel['messages'] = sorted(merged_channel['messages'], key=lambda x: x.time)
+    return merged_channel
+
+
+def get_channel_info(channel):
+    channel_info = {k: v for k, v in channel.items() if k != 'messages'}
+    return channel_info
+
+
+def note_id2note(note_id, pitched=True):
+    if pitched:
+        octave, interval = divmod(note_id, 12)
+        return {
+            'note': interval2note[interval],
+            'octave': octave - 1
+        }
+    return {
+        'note': str(note_id),
+        'octave': None,
+    }
+
+
+def note2note_id(note, pitched=True):
+    if pitched:
+        interval = note2interval[note['note']]
+        return 12 * (note['octave'] + 1) + interval
+    return int(note['note'])
 
 
 # todo: allow multiple instruments per channel
@@ -233,110 +271,269 @@ def split_channels(mid, max_time=1e6):
     return channels, info
 
 
-def note_number2note(n):
-    octave, semitones = divmod(n, 12)
-    return interval2note[semitones], octave - 1
+class ChannelConverter:
+    def __init__(self, info, beat_divisors=(8, 3), n_octaves=7, additional_low=3,
+                 additional_high=1, min_percussion=35, max_percussion=81):
+        self.info = info
+        self.beat_divisors = beat_divisors
+        self.n_octaves = n_octaves
+        self.additional_low = additional_low
+        self.additional_high = additional_high
+        self.min_percussion = min_percussion
+        self.max_percussion = max_percussion
 
+        self.beat_fractions = sorted({
+            Fraction(i, divisor)
+            for divisor in self.beat_divisors
+            for i in range(divisor)
+        })
+        self.beat_fraction2idx = {fraction: i for i, fraction in enumerate(self.beat_fractions)}
 
-def channel2nchannel(info, channel):
-    messages = channel['messages']
-    channel = {k: v for k, v in channel.items() if k != 'messages'}
-    channel['notes'] = []
-    find_notes = is_pitched(channel['instrument_id'])
+        self.n_notes = self.n_octaves * 7 + self.additional_low + self.additional_high
+        self.n_note_features = 3  # duration, velocity, sharp
+        self.n_unpitched_features = 2
 
-    pitch2note = {}
-    for msg in messages:
-        if msg.type in ['note_on', 'note_off']:
-            pitch = msg.note
-            if pitch in pitch2note:
-                note = pitch2note[pitch]
-                note['end_time'] = msg.time
-                del pitch2note[pitch]
-            if msg.type == 'note_on':
-                note, octave = note_number2note(pitch) if find_notes else (str(pitch), None)
-                note = dict(
-                    pitch=pitch,
-                    note=note,
-                    octave=octave,
-                    velocity=msg.velocity,
-                    time=msg.time,
-                    end_time=msg.time,
-                    time_sec=mido.tick2second(msg.time, info['ticks_per_beat'], info['tempo'])
-                )
-                channel['notes'].append(note)
-                pitch2note[pitch] = note
+    def channel2nchannel(self, channel):
+        nchannel = {k: deepcopy(v) for k, v in channel.items() if k != 'messages'}
+        nchannel['notes'] = []
+        pitched = is_pitched(channel['instrument_id'])
 
-    for note in channel['notes']:
-        note['duration'] = note['end_time'] - note['time']
+        pitch2note = {}
+        for msg in channel['messages']:
+            if msg.type in ['note_on', 'note_off']:
+                pitch = msg.note
+                if pitch in pitch2note:
+                    note = pitch2note[pitch]
+                    note['end_time'] = msg.time
+                    del pitch2note[pitch]
+                if msg.type == 'note_on':
+                    note = note_id2note(pitch, pitched)
+                    note.update(
+                        pitch=pitch,
+                        velocity=msg.velocity,
+                        time=msg.time,
+                        end_time=msg.time,
+                        time_sec=mido.tick2second(
+                            msg.time, self.info['ticks_per_beat'], self.info['tempo'])
+                    )
+                    nchannel['notes'].append(note)
+                    pitch2note[pitch] = note
 
-    return channel
+        for note in nchannel['notes']:
+            note['duration'] = note['end_time'] - note['time']
 
+        return nchannel
 
-def nchannel2qchannel(info, nchannel, beat_divisors=(8, 3), in_place=True):
-    def ticks2loc(ticks):
-        bar, ticks = divmod(ticks, info['ticks_per_bar'])
-        beat, ticks = divmod(ticks, info['ticks_per_beat'])
+    def nchannel2kchannel(self, nchannel, in_place=False):
+        kchannel = nchannel if in_place else deepcopy(nchannel)
+        pitched = is_pitched(nchannel['instrument_id'])
+        for note in kchannel['notes']:
+            if pitched:
+                octave, degree, sharp = self.note2scale_loc(note)
+            else:
+                octave, degree, sharp = None, None, None
+            note.update(
+                scale_octave=octave,
+                scale_degree=degree,
+                sharp=sharp,
+            )
+        return kchannel
 
-        return bar, beat, ticks
+    def kchannel2qchannel(self, kchannel, in_place=False):
+        def ticks2loc(ticks):
+            bar, ticks = divmod(ticks, self.info['ticks_per_bar'])
+            beat, ticks = divmod(ticks, self.info['ticks_per_beat'])
 
-    divisor2ticks = {divisor: info['ticks_per_beat'] / divisor for divisor in beat_divisors}
+            return bar, beat, ticks
 
-    def note_quantizations(time, duration=None):
-        # todo: use numpy
-        for divisor, ticks in divisor2ticks.items():
-            qtime, time_error = round_number(time, ticks)
-            total_error = abs(time_error)
-            yield (qtime, divisor), total_error
+        divisor2ticks = {divisor: self.info['ticks_per_beat'] / divisor
+                         for divisor in self.beat_divisors}
 
-    qchannel = nchannel if in_place else deepcopy(nchannel)
+        def note_quantizations(time, duration=None):
+            # todo: use numpy
+            for divisor, ticks in divisor2ticks.items():
+                qtime, time_error = round_number(time, ticks)
+                total_error = abs(time_error)
+                yield (qtime, divisor), total_error
 
-    for note in qchannel['notes']:
-        time = note['time']
-        duration = note.get('duration')
-        qtime, divisor = min(note_quantizations(time, duration), key=lambda x: x[1])[0]
-        note['qtime'] = int(qtime)
-        note['qduration'] = note['end_time'] - note['qtime']
+        qchannel = kchannel if in_place else deepcopy(kchannel)
 
-        bar, beat, ticks = ticks2loc(note['qtime'])
-        note['bar'] = int(bar)
-        note['beat'] = int(beat)
-        quants = int(ticks // divisor2ticks[divisor])
-        note['beat_fraction'] = Fraction(quants, divisor)
+        for note in qchannel['notes']:
+            time = note['time']
+            duration = note.get('duration')
+            qtime, divisor = min(note_quantizations(time, duration), key=lambda x: x[1])[0]
+            note['qtime'] = int(qtime)
+            note['qduration'] = note['end_time'] - note['qtime']
 
-    return qchannel
+            bar, beat, ticks = ticks2loc(note['qtime'])
+            quants = int(ticks // divisor2ticks[divisor])
+            note.update(
+                bar=int(bar),
+                beat=int(beat),
+                beat_fraction=Fraction(quants, divisor),
+            )
 
+        return qchannel
 
-def qchannel2channel(info, channel_info, qchannel):
-    def loc2ticks(bar, beat, beat_fraction):
-        return (
-            bar * info['ticks_per_bar'] +
-            beat * info['ticks_per_beat'] +
-            int(beat_fraction * info['ticks_per_beat'])
+    def qchannel2channel(self, channel_info, qchannel):
+        def loc2ticks(bar, beat, beat_fraction):
+            return (
+                bar * self.info['ticks_per_bar'] +
+                beat * self.info['ticks_per_beat'] +
+                int(beat_fraction * self.info['ticks_per_beat'])
+            )
+
+        pitched = is_pitched(channel_info['instrument_id'])
+        messages = []
+        channel_idx = channel_info['index']
+        for note in qchannel['notes']:
+            note = copy(note)
+            if pitched:
+                note_ = self.scale_loc2note(
+                    note['scale_octave'], note['scale_degree'], note['sharp'])
+                note.update(note_)
+            note_id = note2note_id(note, pitched)
+            time = loc2ticks(note['bar'], note['beat'], note['beat_fraction'])
+
+            note_on = Message('note_on', channel=channel_idx,
+                              note=note_id, velocity=note['velocity'], time=time)
+            note_off = Message('note_off', channel=channel_idx,
+                               note=note_id, time=time+note['qduration'])
+            messages += [note_on, note_off]
+
+        channel = deepcopy(channel_info)
+        channel['messages'] = sorted(messages, key=lambda x: x.time)
+        return channel
+
+    def note2scale_loc(self, note):
+        interval = note2interval[note['note']] - self.tonic_interval
+        degree = self.mode.get_degree(interval)
+        sharp = not isinstance(degree, int)
+        degree = int(degree)
+        octave = note['octave']
+        if interval < 0:
+            octave -= 1
+        return octave, degree, sharp
+
+    def scale_loc2note(self, octave, degree, sharp=False):
+        interval = self.info['scale']['mode'].absolute_intervals[degree - 1] + self.tonic_interval
+        if sharp:
+            interval += 1
+        if interval >= 12:
+            octave += 1
+            interval -= 12
+        return dict(
+            note=interval2note[interval],
+            octave=octave,
         )
 
-    messages = []
-    channel_idx = channel_info['index']
-    for note in qchannel['notes']:
-        time = loc2ticks(note['bar'], note['beat'], note['beat_fraction'])
-        note_on = Message('note_on', channel=channel_idx,
-                          note=note['pitch'], velocity=note['velocity'], time=time)
-        note_off = Message('note_off', channel=channel_idx,
-                           note=note['pitch'], time=time+note['qduration'])
-        messages += [note_on, note_off]
+    def qchannel2vchannel(self, qchannel):
+        pitched = is_pitched(qchannel['instrument_id'])
+        bars = [self.get_empty_bar(pitched) for _ in range(self.n_bars)]
+        for note in qchannel['notes']:
+            try:
+                note_idx, sharp = self.note2idx(note, pitched)
+            except ValueError:
+                continue
 
-    channel = copy(channel_info)
-    channel['messages'] = sorted(messages, key=lambda x: x.time)
-    return channel
+            partial_beat = self.get_empty_beat(pitched)
+            features = [note['qduration'], note['velocity'] / 127]
+            if pitched:
+                features.append(sharp)
+            partial_beat[self.beat_fraction2idx[note['beat_fraction']]][note_idx] = features
 
+            bar = bars[note['bar']]
+            bar[note['beat']] = np.maximum(bar[note['beat']], partial_beat)
+        return bars
 
-def merge_channels(channels):
-    merged_channel = copy(channels[0])
-    merged_channel['messages'] = []
-    channel_idx = merged_channel['index']
-    for channel in channels:
-        for msg in channel['messages']:
-            msg = copy(msg)
-            msg.channel = channel_idx
-            merged_channel['messages'].append(msg)
-    merged_channel['messages'] = sorted(merged_channel['messages'], key=lambda x: x.time)
-    return merged_channel
+    def vchannel2qchannel(self, channel_info, vchannel):
+        pitched = is_pitched(channel_info['instrument_id'])
+        qchannel = copy(channel_info)
+        qchannel['notes'] = []
+        for bar_idx, bar in enumerate(vchannel):
+            for beat_idx, beat in enumerate(bar):
+                for fraction, vnotes in zip(self.beat_fractions, beat):
+                    velocities = vnotes[:, 1]
+                    note_inds = np.nonzero(velocities)[0]
+                    for note_idx in note_inds:
+                        vnote = vnotes[note_idx]
+                        if pitched:
+                            duration, velocity, sharp = vnote
+                        else:
+                            duration, velocity = vnote
+                            sharp = False
+                        note = self.idx2note(note_idx, pitched, sharp)
+                        note.update(
+                            bar=bar_idx,
+                            beat=beat_idx,
+                            beat_fraction=fraction,
+                            qduration=int(duration),
+                            velocity=int(velocity * 127),
+                        )
+                        qchannel['notes'].append(note)
+        return qchannel
+
+    @property
+    def mode(self):
+        return self.info['scale']['mode']
+
+    @property
+    def n_bars(self):
+        return math.ceil(self.info['n_bars'])
+
+    @property
+    def tonic_interval(self):
+        return note2interval[self.info['scale']['tonic']]
+
+    def n_features(self, pitched):
+        return self.n_note_features if pitched else self.n_unpitched_features
+
+    def get_empty_beat(self, pitched):
+        return np.zeros([len(self.beat_fractions), self.n_notes, self.n_features(pitched)])
+
+    def get_empty_bar(self, pitched):
+        return [self.get_empty_beat(pitched) for _ in range(self.info['n_beats'])]
+
+    def note2idx(self, note, pitched):
+        if pitched:
+            interval = note2interval[note['note']] - self.tonic_interval
+            degree = self.info['scale']['mode'].get_degree(interval)
+            sharp = not isinstance(degree, int)
+            degree = int(degree)
+            octave = note['octave']
+            if interval < 0:
+                octave -= 1
+            note_idx = self.additional_low + (octave - 1) * 7 + degree
+            if note_idx < 0 or note_idx >= self.n_notes:
+                raise ValueError()
+            return note_idx, sharp
+
+        note_idx = note['pitch']
+        if note_idx < self.min_percussion or note_idx > self.max_percussion:
+            raise ValueError()
+        note_idx -= self.min_percussion
+        return note_idx, False
+
+    def idx2note(self, note_idx, pitched, sharp=False):
+        if pitched:
+            note_idx -= self.additional_low
+            degree = note_idx % 7 + 1
+            octave = (note_idx - degree) // 7 + 1
+            interval = self.info['scale']['mode'].absolute_intervals[degree - 1] + \
+                self.tonic_interval
+            if sharp:
+                interval += 1  # ?
+            if interval >= 12:
+                octave += 1
+                interval -= 12
+
+            note = interval2note[interval]
+            return dict(
+                note=note,
+                octave=octave,
+            )
+
+        return dict(
+            note=note_idx+self.min_percussion,
+            octave=None,
+        )
