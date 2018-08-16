@@ -1,4 +1,4 @@
-from copy import copy
+from copy import copy, deepcopy
 import math
 import numpy as np
 import os
@@ -272,7 +272,7 @@ def channel2nchannel(info, channel):
     return channel
 
 
-def quantize_notes(info, notes, beat_divisors=(8, 3)):
+def nchannel2qchannel(info, nchannel, beat_divisors=(8, 3), in_place=True):
     def ticks2loc(ticks):
         bar, ticks = divmod(ticks, info['ticks_per_bar'])
         beat, ticks = divmod(ticks, info['ticks_per_beat'])
@@ -288,7 +288,9 @@ def quantize_notes(info, notes, beat_divisors=(8, 3)):
             total_error = abs(time_error)
             yield (qtime, divisor), total_error
 
-    for note in notes:
+    qchannel = nchannel if in_place else deepcopy(nchannel)
+
+    for note in qchannel['notes']:
         time = note['time']
         duration = note.get('duration')
         qtime, divisor = min(note_quantizations(time, duration), key=lambda x: x[1])[0]
@@ -301,10 +303,10 @@ def quantize_notes(info, notes, beat_divisors=(8, 3)):
         quants = int(ticks // divisor2ticks[divisor])
         note['beat_fraction'] = Fraction(quants, divisor)
 
-    return notes
+    return qchannel
 
 
-def dequantize_channel(info, channel_info, quantized_channel):
+def qchannel2channel(info, channel_info, qchannel):
     def loc2ticks(bar, beat, beat_fraction):
         return (
             bar * info['ticks_per_bar'] +
@@ -314,7 +316,7 @@ def dequantize_channel(info, channel_info, quantized_channel):
 
     messages = []
     channel_idx = channel_info['index']
-    for note in quantized_channel:
+    for note in qchannel['notes']:
         time = loc2ticks(note['bar'], note['beat'], note['beat_fraction'])
         note_on = Message('note_on', channel=channel_idx,
                           note=note['pitch'], velocity=note['velocity'], time=time)
