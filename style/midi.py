@@ -1,5 +1,6 @@
 from copy import copy
 import math
+import numpy as np
 import os
 import re
 
@@ -11,7 +12,7 @@ from py_utils.math import round_number
 import mido
 from mido import Message, MetaMessage, MidiFile, MidiTrack
 
-from style.scales import semitones2note
+from style.scales import interval2note, note2interval
 
 here = os.path.dirname(__file__)
 
@@ -20,7 +21,7 @@ def get_path(path):
     return os.path.join(here, path)
 
 
-def parse_programs(path, group=None):
+def parse_programs(path):
     program2instrument = {}
     with open(path) as f:
         for line in f:
@@ -216,6 +217,7 @@ def split_channels(mid, max_time=1e6):
         return None
     info['bpm'] = int(mido.tempo2bpm(info['tempo']))
     info['n_bars'] = info['duration'] / info['ticks_per_bar']
+    info['n_beats'] = info['time_signature']['numerator']
 
     for k, v in channels.items():
         v['index'] = k
@@ -233,7 +235,7 @@ def split_channels(mid, max_time=1e6):
 
 def note_number2note(n):
     octave, semitones = divmod(n, 12)
-    return semitones2note[semitones], octave - 1
+    return interval2note[semitones], octave - 1
 
 
 def channel2nchannel(info, channel):
@@ -270,7 +272,7 @@ def channel2nchannel(info, channel):
     return channel
 
 
-def quantize_notes(info, notes, beat_divisors=[8, 3]):
+def quantize_notes(info, notes, beat_divisors=(8, 3)):
     def ticks2loc(ticks):
         bar, ticks = divmod(ticks, info['ticks_per_bar'])
         beat, ticks = divmod(ticks, info['ticks_per_beat'])
