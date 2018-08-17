@@ -302,13 +302,11 @@ def scale_loc2note(octave, degree, mode, tonic, sharp=False):
 
 
 class ChannelConverter:
-    def __init__(self, info, beat_divisors=(8, 3), n_octaves=7, additional_low=3,
-                 additional_high=1, min_percussion=35, max_percussion=81):
+    def __init__(self, info, beat_divisors=(8, 3), n_octaves=8, min_percussion=35,
+                 max_percussion=81):
         self.info = info
         self.beat_divisors = beat_divisors
         self.n_octaves = n_octaves
-        self.additional_low = additional_low
-        self.additional_high = additional_high
         self.min_percussion = min_percussion
         self.max_percussion = max_percussion
 
@@ -319,7 +317,7 @@ class ChannelConverter:
         })
         self.beat_fraction2idx = {fraction: i for i, fraction in enumerate(self.beat_fractions)}
 
-        self.n_notes = self.n_octaves * 7 + self.additional_low + self.additional_high
+        self.n_notes = self.n_octaves * 7
         self.n_note_features = 3  # duration, velocity, sharp
         self.n_unpitched_features = 2
 
@@ -452,14 +450,14 @@ class ChannelConverter:
         bars = [self.get_empty_bar(pitched) for _ in range(self.n_bars)]
         for note in qchannel['notes']:
             try:
-                note_idx, sharp = self.note2idx(note, pitched)
+                note_idx = self.note2idx(note, pitched)
             except ValueError:
                 continue
 
             partial_beat = self.get_empty_beat(pitched)
             features = [note['qduration'], note['velocity'] / 127]
             if pitched:
-                features.append(sharp)
+                features.append(note['sharp'])
             partial_beat[self.beat_fraction2idx[note['beat_fraction']]][note_idx] = features
 
             bar = bars[note['bar']]
@@ -505,10 +503,6 @@ class ChannelConverter:
     def n_bars(self):
         return math.ceil(self.info['n_bars'])
 
-    @property
-    def tonic_interval(self):
-        return note2interval[self.info['scale']['tonic']]
-
     def n_features(self, pitched):
         return self.n_note_features if pitched else self.n_unpitched_features
 
@@ -522,37 +516,28 @@ class ChannelConverter:
         if pitched:
             octave = note['scale_octave']
             degree = note['scale_degree']
-            note_idx = self.additional_low + octave * 7 + degree
+            note_idx = octave * 7 + (degree - 1)
             if note_idx < 0 or note_idx >= self.n_notes:
                 raise ValueError()
             return note_idx
-
-        note_idx = note['pitch']
-        if note_idx < self.min_percussion or note_idx > self.max_percussion:
-            raise ValueError()
-        note_idx -= self.min_percussion
-        return note_idx, False
+        else:
+            note_idx = int(note['note'])
+            if note_idx < self.min_percussion or note_idx > self.max_percussion:
+                raise ValueError()
+            note_idx -= self.min_percussion
+            return note_idx
 
     def idx2note(self, note_idx, pitched, sharp=False):
         if pitched:
-            note_idx -= self.additional_low
             degree = note_idx % 7 + 1
-            octave = (note_idx - degree) // 7 + 1
-            interval = self.info['scale']['mode'].absolute_intervals[degree - 1] + \
-                self.tonic_interval
-            if sharp:
-                interval += 1  # ?
-            if interval >= 12:
-                octave += 1
-                interval -= 12
-
-            note = interval2note[interval]
+            note_idx -= degree - 1
+            octave = note_idx // 7
             return dict(
-                note=note,
-                octave=octave,
+                scale_degree=degree,
+                scale_octave=octave,
+                sharp=sharp,
             )
-
-        return dict(
-            note=note_idx+self.min_percussion,
-            octave=None,
-        )
+        else:
+            return dict(
+                note=note_idx+self.min_percussion,
+            )
