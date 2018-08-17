@@ -271,6 +271,36 @@ def split_channels(mid, max_time=1e6):
     return channels, info
 
 
+def note2scale_loc(note, mode, tonic):
+    tonic_interval = note2interval[tonic]
+    interval = note2interval[note['note']] - tonic_interval
+    degree = mode.get_degree(interval)
+    sharp = not isinstance(degree, int)
+    degree = int(degree)
+    octave = note['octave']
+    if interval < 0:
+        octave -= 1
+    return dict(
+        octave=octave,
+        degree=degree,
+        sharp=sharp,
+    )
+
+
+def scale_loc2note(octave, degree, mode, tonic, sharp=False):
+    tonic_interval = note2interval[tonic]
+    interval = mode.absolute_intervals[degree - 1] + tonic_interval
+    if sharp:
+        interval += 1
+    if interval >= 12:
+        octave += 1
+        interval -= 12
+    return dict(
+        note=interval2note[interval],
+        octave=octave,
+    )
+
+
 class ChannelConverter:
     def __init__(self, info, beat_divisors=(8, 3), n_octaves=7, additional_low=3,
                  additional_high=1, min_percussion=35, max_percussion=81):
@@ -314,7 +344,10 @@ class ChannelConverter:
                         time=msg.time,
                         end_time=msg.time,
                         time_sec=mido.tick2second(
-                            msg.time, self.info['ticks_per_beat'], self.info['tempo'])
+                            msg.time,
+                            self.info['ticks_per_beat'],
+                            self.info['tempo']
+                        )
                     )
                     nchannel['notes'].append(note)
                     pitch2note[pitch] = note
@@ -329,13 +362,17 @@ class ChannelConverter:
         pitched = is_pitched(nchannel['instrument_id'])
         for note in kchannel['notes']:
             if pitched:
-                octave, degree, sharp = self.note2scale_loc(note)
+                scale_loc = note2scale_loc(note, self.mode, self.tonic)
             else:
-                octave, degree, sharp = None, None, None
+                scale_loc = dict(
+                    octave=None,
+                    degree=None,
+                    sharp=None
+                )
             note.update(
-                scale_octave=octave,
-                scale_degree=degree,
-                sharp=sharp,
+                scale_octave=scale_loc['octave'],
+                scale_degree=scale_loc['degree'],
+                sharp=scale_loc['sharp'],
             )
         return kchannel
 
@@ -389,8 +426,13 @@ class ChannelConverter:
         for note in qchannel['notes']:
             note = copy(note)
             if pitched:
-                note_ = self.scale_loc2note(
-                    note['scale_octave'], note['scale_degree'], note['sharp'])
+                note_ = scale_loc2note(
+                    note['scale_octave'],
+                    note['scale_degree'],
+                    self.mode,
+                    self.tonic,
+                    note['sharp']
+                )
                 note.update(note_)
             note_id = note2note_id(note, pitched)
             time = loc2ticks(note['bar'], note['beat'], note['beat_fraction'])
@@ -404,28 +446,6 @@ class ChannelConverter:
         channel = deepcopy(channel_info)
         channel['messages'] = sorted(messages, key=lambda x: x.time)
         return channel
-
-    def note2scale_loc(self, note):
-        interval = note2interval[note['note']] - self.tonic_interval
-        degree = self.mode.get_degree(interval)
-        sharp = not isinstance(degree, int)
-        degree = int(degree)
-        octave = note['octave']
-        if interval < 0:
-            octave -= 1
-        return octave, degree, sharp
-
-    def scale_loc2note(self, octave, degree, sharp=False):
-        interval = self.info['scale']['mode'].absolute_intervals[degree - 1] + self.tonic_interval
-        if sharp:
-            interval += 1
-        if interval >= 12:
-            octave += 1
-            interval -= 12
-        return dict(
-            note=interval2note[interval],
-            octave=octave,
-        )
 
     def qchannel2vchannel(self, qchannel):
         pitched = is_pitched(qchannel['instrument_id'])
@@ -478,6 +498,10 @@ class ChannelConverter:
         return self.info['scale']['mode']
 
     @property
+    def tonic(self):
+        return self.info['scale']['tonic']
+
+    @property
     def n_bars(self):
         return math.ceil(self.info['n_bars'])
 
@@ -496,17 +520,12 @@ class ChannelConverter:
 
     def note2idx(self, note, pitched):
         if pitched:
-            interval = note2interval[note['note']] - self.tonic_interval
-            degree = self.info['scale']['mode'].get_degree(interval)
-            sharp = not isinstance(degree, int)
-            degree = int(degree)
-            octave = note['octave']
-            if interval < 0:
-                octave -= 1
-            note_idx = self.additional_low + (octave - 1) * 7 + degree
+            octave = note['scale_octave']
+            degree = note['scale_degree']
+            note_idx = self.additional_low + octave * 7 + degree
             if note_idx < 0 or note_idx >= self.n_notes:
                 raise ValueError()
-            return note_idx, sharp
+            return note_idx
 
         note_idx = note['pitch']
         if note_idx < self.min_percussion or note_idx > self.max_percussion:
