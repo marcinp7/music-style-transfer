@@ -6,13 +6,14 @@ import re
 
 from collections import defaultdict
 from fractions import Fraction
-from py_utils import flatten, replace_none
+from py_utils import flatten
 from py_utils.math import round_number
 
 import mido
 from mido import Message, MetaMessage, MidiFile, MidiTrack
 
 from style.scales import interval2note, note2interval
+from style.exceptions import MidiFormatError
 
 here = os.path.dirname(__file__)
 
@@ -154,8 +155,6 @@ def note2note_id(note, pitched=True):
     return int(note['note'])
 
 
-# todo: allow multiple instruments per channel
-@replace_none(([], None))
 def split_channels(mid, max_time=1e6):
     info = {
         'ticks_per_beat': mid.ticks_per_beat,
@@ -196,7 +195,7 @@ def split_channels(mid, max_time=1e6):
 
     for msg in list(merge_tracks(mid.tracks)):
         if msg.time > max_time:
-            return None
+            raise MidiFormatError('MIDI file too long')
         msg = copy(msg)
         if msg.type in messages_to_ignore:
             continue
@@ -212,7 +211,7 @@ def split_channels(mid, max_time=1e6):
             info['time_signature'] = ts
         elif msg.type == 'key_signature':
             if played_channels and info.get('key') != msg.key:
-                return None
+                raise MidiFormatError('Key signature changed')
             info['key'] = msg.key
         elif msg.type == 'set_tempo':
             if tempo:
@@ -239,7 +238,7 @@ def split_channels(mid, max_time=1e6):
             channels[msg.channel]['messages'].append(msg)
             if msg.type == 'note_on':
                 if msg.channel in non_playable_channels:
-                    return None
+                    raise MidiFormatError(f'Channel {msg.channel} settings changed')
                 played_channels.add(msg.channel)
         else:
             raise Exception(f'Unknown message type: {msg.type}')
