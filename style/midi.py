@@ -7,12 +7,13 @@ import re
 from collections import defaultdict
 from fractions import Fraction
 from py_utils import flatten
-from py_utils.math import round_number
+from py_utils.data import list2df
+from py_utils.math import round_number, normalize_dist
 
 import mido
 from mido import Message, MetaMessage, MidiFile, MidiTrack
 
-from style.scales import interval2note, note2interval
+from style.scales import interval2note, note2interval, get_notes_dist, notes, get_scale
 from style.exceptions import MidiFormatError
 
 here = os.path.dirname(__file__)
@@ -165,7 +166,7 @@ def split_channels(mid, max_time=1e6):
             'value': 1.,
         }
     }
-    channels = defaultdict(lambda: {'messages': [], 'program': 0, 'volume': 96})
+    channels = defaultdict(lambda: {'messages': [], 'program': 0, 'volume': 96 / 127})
     played_channels = set()
     non_playable_channels = set()
 
@@ -220,10 +221,7 @@ def split_channels(mid, max_time=1e6):
             tempo_change_time = msg.time
         elif msg.type == 'control_change':
             if msg.control == 7:
-                if (channels[msg.channel]['volume'] != msg.value and
-                        msg.channel in played_channels):
-                    non_playable_channels.add(msg.channel)
-                channels[msg.channel]['volume'] = msg.value
+                channels[msg.channel]['volume'] = msg.value / 127
             if msg.control == 10:
                 channels[msg.channel]['pan'] = msg.value
         elif msg.type == 'program_change':
@@ -232,9 +230,11 @@ def split_channels(mid, max_time=1e6):
                 non_playable_channels.add(msg.channel)
             channels[msg.channel]['program'] = msg.program
         elif msg.type in ['note_on', 'note_off', 'pitchwheel']:
-            if msg.type == 'note_on' and msg.velocity == 0:
-                msg = Message('note_off', channel=msg.channel, note=msg.note,
-                              velocity=msg.velocity, time=msg.time)
+            if msg.type == 'note_on':
+                if msg.velocity == 0:
+                    msg = Message('note_off', channel=msg.channel, note=msg.note,
+                                  velocity=msg.velocity, time=msg.time)
+                    msg.velocity = int(msg.velocity * channels[msg.channel]['volume'])
             channels[msg.channel]['messages'].append(msg)
             if msg.type == 'note_on':
                 if msg.channel in non_playable_channels:
@@ -266,6 +266,7 @@ def split_channels(mid, max_time=1e6):
     for channel in channels:
         channel['instrument_id'] = get_instrument_id(channel['program'], channel['index'])
         channel['instrument_name'] = program2instrument[channel['instrument_id']]
+        channel['volume'] = 96
 
     return channels, info
 
