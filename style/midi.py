@@ -541,3 +541,29 @@ class ChannelConverter:
             return dict(
                 note=note_idx+self.min_percussion,
             )
+
+
+def get_input(filename):
+    try:
+        mid = MidiFile(filename)
+    except (OSError, ValueError, KeyError, EOFError):
+        raise MidiFormatError('Error loading MIDI file')
+    channels, info = split_channels(mid)
+    channels_info = [get_channel_info(channel) for channel in channels]
+
+    cc = ChannelConverter(info)
+    nchannels = [cc.channel2nchannel(channel) for channel in channels]
+
+    notes_dist_per_instrument = [get_notes_dist(info, nchannel) for nchannel in nchannels]
+    notes_dist = list2df(notes_dist_per_instrument).reindex(columns=notes).sum()
+    notes_dist = np.asarray(notes_dist)
+    normalize_dist(notes_dist)
+
+    scale = get_scale(notes_dist=notes_dist)
+    info['scale'] = scale
+
+    kchannels = [cc.nchannel2kchannel(nchannel) for nchannel in nchannels]
+    qchannels = [cc.kchannel2qchannel(kchannel) for kchannel in kchannels]
+    vchannels = [cc.qchannel2vchannel(qchannel) for qchannel in qchannels]
+
+    return info, channels_info, vchannels
