@@ -318,6 +318,7 @@ class ChannelConverter:
         self.beat_fraction2idx = {fraction: i for i, fraction in enumerate(self.beat_fractions)}
 
         self.n_notes = self.n_octaves * 7
+        self.n_unpitched = self.max_percussion - self.min_percussion + 1
         self.n_note_features = 3  # duration, velocity, sharp
         self.n_unpitched_features = 2
 
@@ -507,7 +508,8 @@ class ChannelConverter:
         return self.n_note_features if pitched else self.n_unpitched_features
 
     def get_empty_beat(self, pitched):
-        return np.zeros([len(self.beat_fractions), self.n_notes, self.n_features(pitched)])
+        n_notes = self.n_notes if pitched else self.n_unpitched
+        return np.zeros([len(self.beat_fractions), n_notes, self.n_features(pitched)])
 
     def get_empty_bar(self, pitched):
         return [self.get_empty_beat(pitched) for _ in range(self.info['n_beats'])]
