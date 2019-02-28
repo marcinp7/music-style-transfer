@@ -3,15 +3,8 @@ import torch
 
 from py_utils.pytorch import total_size, remove_dims, tensor_view
 
+from style.exceptions import MidiFormatError
 from style.midi import get_input
-
-
-def get_inputs(files, shuffle=False):
-    if shuffle:
-        files = files[:]
-        np.random.shuffle(files)
-    for file in files:
-        yield get_input(file)
 
 
 def flatten_channel(x):
@@ -149,6 +142,15 @@ class StyleApplier(torch.nn.Module):
             num_layers=self.num_layers,
         )
 
+        self.fc = torch.nn.Linear(self.output_size, self.output_size)
+
+    def duration_activation(self, x):
+        return torch.relu(x)
+
+    def velocity_activation(self, x):
+        x = torch.relu(x)
+        return torch.sigmoid(x)
+
     @property
     def melody_size(self):
         return total_size(self.melody_shape)
@@ -162,6 +164,7 @@ class StyleApplier(torch.nn.Module):
         style = style.unsqueeze(0).expand(n_beats, -1, -1)
         concat_bar = torch.cat([bar, style], dim=2)
         output, _ = self.lstm(concat_bar)
+        output = self.fc(output)
         return output
 
     def forward(self, melody, style):
@@ -169,4 +172,55 @@ class StyleApplier(torch.nn.Module):
         bars = [self.apply_style(bar, style) for bar in melody]
         output = torch.stack(bars)
         output = tensor_view(output, keep_dims=2, *self.output_shape)
+
+        durations = output[:, :, :, :, 0]
+        velocities = output[:, :, :, :, 1]
+
+        durations = self.duration_activation(durations)
+        velocities = self.velocity_activation(velocities)
+
+        output = torch.stack([durations, velocities], dim=-1)
+
         return output
+
+
+class StyleTransferModel(torch.nn.Module):
+    def __init__(self, channel_encoder, melody_encoder, style_encoder, style_applier):
+        super().__init__()
+        self.channel_encoder = channel_encoder
+        self.melody_encoder = melody_encoder
+        self.style_encoder = style_encoder
+        self.style_applier = style_applier
+
+    def prepare_input(self, vchannel, device='cpu'):
+        return self.channel_encoder.prepare_input(vchannel, device)
+
+    def forward(self, input):
+        encoded = self.channel_encoder(input)
+        melody = self.melody_encoder(input, encoded)
+        style = self.style_encoder(encoded)
+        applied = self.style_applier(melody, style)
+        return applied
+
+
+def get_duration(y):
+    return y[:, :, :, :, 0]
+
+
+def get_velocity(y):
+    return y[:, :, :, :, 1]
+
+
+def duration_loss_func(y, pred):
+    return torch.log((1 + y) / (1 + pred)) ** 2
+
+
+def velocity_loss_func(y, pred):
+    return (y - pred) ** 2
+
+
+def loss_func(y, pred):
+    duration_loss = duration_loss_func(get_duration(y), get_duration(pred))
+    velocity_loss = velocity_loss_func(get_velocity(y), get_velocity(pred))
+    total_loss = duration_loss + velocity_loss
+    return total_loss.mean()
