@@ -6,7 +6,7 @@ import re
 
 from collections import defaultdict
 from fractions import Fraction
-from py_utils import flatten
+from py_utils import flatten, group_by
 from py_utils.data import list2df
 from py_utils.math import round_number, normalize_dist
 
@@ -58,7 +58,6 @@ def play_midi(mid, portname=None):
         try:
             for message in mid.play():
                 output.send(message)
-
         except KeyboardInterrupt:
             output.reset()
 
@@ -545,12 +544,20 @@ class ChannelConverter:
             )
 
 
+# todo: merge the same instruments, remember the volume
+def merge_channels_by_instrument(channels):
+    channels_grouped = group_by(channels, 'instrument_name', func=merge_channels)
+    channels_grouped = list(channels_grouped.values())
+    return channels_grouped
+
+
 def get_input(filename):
     try:
         mid = MidiFile(filename)
     except (OSError, ValueError, KeyError, EOFError):
         raise MidiFormatError('Error loading MIDI file')
     channels, info = split_channels(mid)
+    channels = merge_channels_by_instrument(channels)
     channels_info = [get_channel_info(channel) for channel in channels]
 
     cc = ChannelConverter(info)
