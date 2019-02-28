@@ -1,17 +1,18 @@
+from collections import defaultdict
 from copy import copy, deepcopy
+from fractions import Fraction
 import math
-import numpy as np
 import os
 import re
 
-from collections import defaultdict
-from fractions import Fraction
-from py_utils import flatten, group_by
-from py_utils.data import list2df
-from py_utils.math import round_number, normalize_dist
+import numpy as np
 
 import mido
 from mido import Message, MetaMessage, MidiFile, MidiTrack
+
+from py_utils import flatten, group_by
+from py_utils.data import list2df
+from py_utils.math import round_number, normalize_dist
 
 from style.scales import interval2note, note2interval, get_notes_dist, notes, get_scale
 from style.exceptions import MidiFormatError
