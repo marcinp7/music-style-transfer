@@ -240,7 +240,7 @@ def split_channels(mid, max_time=1e6):
                     raise MidiFormatError(f'Channel {msg.channel} settings changed')
                 played_channels.add(msg.channel)
         else:
-            raise Exception(f'Unknown message type: {msg.type}')
+            raise MidiFormatError(f'Unknown message type: {msg.type}')
 
     tempo2time[tempo] += msg.time - tempo_change_time
     info['duration'] = msg.time
@@ -250,7 +250,7 @@ def split_channels(mid, max_time=1e6):
     info['tempo2time'] = tempo2time
     info['tempo'] = max(tempo2time.items(), key=lambda x: x[1])[0]
     if info['tempo'] is None:
-        return None
+        raise MidiFormatError(f'Unknown tempo')
     info['bpm'] = int(mido.tempo2bpm(info['tempo']))
     info['n_bars'] = info['duration'] / info['ticks_per_bar']
     info['n_beats'] = info['time_signature']['numerator']
