@@ -2,7 +2,8 @@ import numpy as np
 
 import mido
 
-from py_utils.math import cross_entropy, normalize_dist
+from py_utils.math import normalize_dist
+from py_utils.metrics import cross_entropy
 from py_utils import group_by
 
 notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
