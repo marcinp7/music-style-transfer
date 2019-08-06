@@ -1,5 +1,6 @@
 from collections import defaultdict
 from copy import copy, deepcopy
+from dataclasses import dataclass
 from fractions import Fraction
 import math
 
@@ -100,6 +101,7 @@ messages_to_include = {
     'set_tempo',
     'program_change',
     'control_change',
+    'pitchwheel',
 }
 
 messages_to_ignore = {
@@ -121,6 +123,13 @@ messages_to_ignore = {
     'unknown_meta',
     'sequence_number',
 }
+
+@dataclass
+class Note:
+    type: str
+    note: int
+    velocity: float
+    time: int
 
 known_messages = messages_to_include | messages_to_ignore
 
@@ -196,56 +205,60 @@ def get_midi_info(global_messages, channels, ticks_per_beat):
     return info
 
 
-def clean_channel_messages(channel_messages):
-    channel_info = {
-        'messages': [],
-        'program': 0,
-        'index': channel_messages[0].channel,
-    }
-    played = False
-    modified = False
+def group_channel_messages(channel_messages, channel_id):
+    instrument_id = 0
+    instrument_id2messages = defaultdict(list)
+    volume = default_volume
 
     for msg in channel_messages:
         if msg.type in messages_to_ignore:
             continue
+        if msg.type not in known_messages:
+            raise MidiFormatError(f"Unknown message type: {msg.type}")
         msg = copy(msg)
 
         if msg.type == 'program_change':
-            if channel_info['program'] != msg.program and played:
-                modified = True
-            channel_info['program'] = msg.program
-        elif msg.type in ['note_on', 'note_off', 'pitchwheel']:
-            if msg.type == 'note_on':
-                if msg.velocity == 0:
-                    msg = Message('note_off', channel=msg.channel, note=msg.note, velocity=0,
-                                  time=msg.time)
-                else:
-                    check(not modified, f"Channel {msg.channel} settings changed")
-                    played = True
-        elif msg.type not in known_messages:
-            raise MidiFormatError(f"Unknown message type: {msg.type}")
-        channel_info['messages'].append(msg)
+            instrument_id = get_instrument_id(msg.program, channel_id)
+        elif msg.type == 'control_change' and msg.control == 7:
+            volume = msg.value
+        elif msg.type in ['note_on', 'note_off']:
+            message_type = 'note_off' if msg.type == 'note_on' and msg.velocity == 0 else msg.type
+            velocity = msg.velocity * volume / (max_velocity * max_volume)
+            if message_type == 'note_on':
+                assert 0 <= velocity <= 1, velocity
+            instrument_id2messages[instrument_id].append(Note(
+                type=message_type,
+                note=msg.note,
+                velocity=velocity,
+                time=msg.time,
+            ))
 
-    channel_info['instrument_id'] = get_instrument_id(
-        channel_info['program'], channel_info['index'])
-    channel_info['instrument_name'] = program2instrument[channel_info['instrument_id']]
-
-    return channel_info
+    return dict(instrument_id2messages)
 
 # max_time=1e6
 # check(msg.time <= max_time, "MIDI file too long")
 
 
 def read_midi(mid):
-    global_messages, channels = split_channels(mid)
-    info = get_midi_info(global_messages, channels, mid.ticks_per_beat)
-    channels = [clean_channel_messages(c) for c in channels]
+    global_messages, channels_messages = split_channels(mid)
+    info = get_midi_info(global_messages, channels_messages, mid.ticks_per_beat)
+    instruments = []
+    for channel_messages in channels_messages:
+        channel_id = channel_messages[0].channel
+        grouped_messages = group_channel_messages(channel_messages, channel_id)
+        for instrument_id, messages in grouped_messages.items():
+            if any(msg.type == 'note_on' for msg in messages):
+                instruments.append({
+                    'channel_id': channel_id,
+                    'instrument_id': instrument_id,
+                    'instrument_name': program2instrument[instrument_id],
+                    'messages': messages,
+                })
 
-    channels = sorted(channels, key=lambda x: x['index'])
-    channels = [channel for channel in channels
-                if any(msg.type == 'note_on' for msg in channel['messages'])]
+    return instruments, info
 
-    return channels, info
+
+
 
 
 def note2scale_loc(note, mode, tonic):
@@ -305,7 +318,6 @@ class ChannelConverter:
                     for k, v in channel.items() if k != 'messages'}
         nchannel['notes'] = []
         pitched = is_pitched(channel['instrument_id'])
-        channel_volume = default_volume
 
         note_id2last_played_note = {}
         for msg in channel['messages']:
@@ -317,11 +329,9 @@ class ChannelConverter:
                     del note_id2last_played_note[note_id]
                 if msg.type == 'note_on':
                     note = note_id2note(note_id, pitched)
-                    # todo: keep track of velocity when converting back to the list of messages
-                    velocity = msg.velocity * channel_volume / (max_velocity * max_volume)
                     note.update(
                         note_id=note_id,
-                        velocity=velocity,
+                        velocity=msg.velocity,
                         time=msg.time,
                         end_time=msg.time,
                         time_sec=mido.tick2second(
@@ -332,8 +342,6 @@ class ChannelConverter:
                     )
                     nchannel['notes'].append(note)
                     note_id2last_played_note[note_id] = note
-            elif msg.type == 'control_change' and msg.control == 7:
-                channel_volume = msg.value
 
         for note in nchannel['notes']:
             note['duration'] = note['end_time'] - note['time']
@@ -525,13 +533,11 @@ class ChannelConverter:
                 scale_octave=octave,
                 sharp=sharp,
             )
-        else:
-            return dict(
-                note=note_idx+self.min_percussion,
-            )
+        return dict(
+            note=note_idx+self.min_percussion,
+        )
 
 
-# todo: merge the same instruments, remember the volume
 def merge_channels_by_instrument(channels):
     channels_grouped = group_by(
         channels, 'instrument_name', func=merge_channels)

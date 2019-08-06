@@ -61,7 +61,8 @@ def play_midi(mid, portname=None):
             output.reset()
 
 
-def create_midi(info, *channels, max_delta_time=math.inf):
+# todo: support multiple instruments in single channel
+def create_midi(info, *instruments, max_delta_time=math.inf):
     max_delta_time = mido.second2tick(max_delta_time, info['ticks_per_beat'], info['tempo'])
     if math.isfinite(max_delta_time):
         max_delta_time = int(max_delta_time)
@@ -78,21 +79,30 @@ def create_midi(info, *channels, max_delta_time=math.inf):
 
     track.append(MetaMessage('set_tempo', tempo=info['tempo']))
 
-    for channel in channels:
-        if channel['index'] != 9:
-            track.append(Message('program_change',
-                                 channel=channel['index'], program=channel['program']))
+    messages = []
+    for instrument in instruments:
+        if instrument['channel_id'] != 9:
+            track.append(Message(
+                'program_change',
+                channel=instrument['channel_id'],
+                program=instrument['instrument_id'],
+                time=0,
+            ))
+        for msg in instrument['messages']:
+            velocity = int(msg.velocity * max_velocity)
+            messages.append(Message(
+                msg.type,
+                channel=instrument['channel_id'],
+                note=msg.note,
+                velocity=velocity,
+                time=msg.time,
+            ))
 
-        if 'volume' in channel:
-            track.append(Message('control_change',
-                                 channel=channel['index'], control=7, value=channel['volume']))
-
-    msgs = flatten([channel['messages'] for channel in channels])
-    msgs = sorted(msgs, key=lambda x: x.time)
-    msgs.append(MetaMessage('end_of_track', time=info['duration']))
+    messages = sorted(messages, key=lambda x: x.time)
+    messages.append(MetaMessage('end_of_track', time=info['duration']))
 
     time = 0
-    for msg in msgs:
+    for msg in messages:
         msg = copy(msg)
         delta_time = min(msg.time - time, max_delta_time)
         time = msg.time
