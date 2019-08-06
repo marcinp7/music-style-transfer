@@ -16,6 +16,12 @@ def get_path(path):
     return os.path.join(here, path)
 
 
+default_tempo = 500000
+default_volume = 96
+max_volume = 127
+max_velocity = 127
+
+
 def parse_programs(path):
     program2instrument = {}
     with open(path) as f:
@@ -53,20 +59,6 @@ def play_midi(mid, portname=None):
                 output.send(message)
         except KeyboardInterrupt:
             output.reset()
-
-
-def merge_tracks(tracks):
-    msgs = []
-    for track in tracks:
-        time = 0
-        for msg in track:
-            msg = copy(msg)
-            time += msg.time
-            msg.time = time
-            msgs.append(msg)
-    msgs = sorted(msgs, key=lambda x: x.time)
-    return msgs
-
 
 
 def create_midi(info, *channels, max_delta_time=math.inf):

@@ -102,16 +102,11 @@ minor_mode = create_mode(major_mode, shift=-2)
 all_modes = [create_mode(major_mode, shift) for shift in range(len(Mode.names))]
 
 
-def get_notes_dist(info, nchannel, include_volume=True):
+def get_notes_dist(info, nchannel):
     note2time = group_by(nchannel['notes'], 'note', func=lambda xs: sum(
         x['duration'] * x['velocity'] for x in xs))
     note2time = {note: mido.tick2second(
         time, info['ticks_per_beat'], info['tempo']) for note, time in note2time.items()}
-    for note in note2time:
-        if note in note2time:
-            note2time[note] /= 127  # max velocity
-            if include_volume:
-                note2time[note] *= nchannel['volume'] / 127
     note2time['instrument'] = nchannel['instrument_name']
     return note2time
 

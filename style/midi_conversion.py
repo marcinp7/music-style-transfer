@@ -12,7 +12,15 @@ from py_utils import group_by
 from py_utils.data import list2df
 from py_utils.math import round_number, normalize_dist
 
-from style.midi import get_instrument_id, program2instrument, is_pitched, merge_tracks
+from style.midi import (
+    get_instrument_id,
+    program2instrument,
+    is_pitched,
+    default_tempo,
+    default_volume,
+    max_volume,
+    max_velocity,
+)
 from style.scales import interval2note, note2interval, get_notes_dist, notes, get_scale
 from style.exceptions import MidiFormatError
 
@@ -26,7 +34,8 @@ def merge_channels(channels):
             msg = copy(msg)
             msg.channel = channel_idx
             merged_channel['messages'].append(msg)
-    merged_channel['messages'] = sorted(merged_channel['messages'], key=lambda x: x.time)
+    merged_channel['messages'] = sorted(
+        merged_channel['messages'], key=lambda x: x.time)
     return merged_channel
 
 
@@ -55,7 +64,25 @@ def note2note_id(note, pitched=True):
     return int(note['note'])
 
 
+def merge_tracks(tracks):
+    """Merge all events to a single track and apply global timing."""
+    msgs = []
+    for track in tracks:
+        time = 0
+        for msg in track:
+            msg = copy(msg)
+            time += msg.time
+            msg.time = time
+            msgs.append(msg)
+    msgs = sorted(msgs, key=lambda x: x.time)
+    return list(msgs)
+
+
 def split_channels(mid, max_time=1e6):
+    def check(condition, error_message):
+        if not condition:
+            raise MidiFormatError(error_message)
+
     info = {
         'ticks_per_beat': mid.ticks_per_beat,
         'bpm': [],
@@ -63,11 +90,13 @@ def split_channels(mid, max_time=1e6):
             'numerator': 4,
             'denominator': 4,
             'value': 1.,
-        }
+        },
+        'key': None,
     }
-    channels = defaultdict(lambda: {'messages': [], 'program': 0, 'volume': 96 / 127})
+    channels = defaultdict(
+        lambda: {'messages': [], 'program': 0})
     played_channels = set()
-    non_playable_channels = set()
+    modified_channels = set()
 
     messages_to_ignore = [
         'smpte_offset',
@@ -87,18 +116,18 @@ def split_channels(mid, max_time=1e6):
         'cue_marker',
         'unknown_meta',
         'sequence_number',
+        'control_change',
     ]
 
-    tempo = None
+    tempo = default_tempo
     tempo_change_time = 0
     tempo2total_time = defaultdict(int)
 
-    for msg in list(merge_tracks(mid.tracks)):
-        if msg.time > max_time:
-            raise MidiFormatError('MIDI file too long')
-        msg = copy(msg)
+    for msg in merge_tracks(mid.tracks):
         if msg.type in messages_to_ignore:
             continue
+        check(msg.time <= max_time, "MIDI file too long")
+        msg = copy(msg)
 
         if msg.type == 'time_signature':
             ts = info['time_signature'] = {
@@ -106,51 +135,43 @@ def split_channels(mid, max_time=1e6):
                 'denominator': msg.denominator,
                 'value': msg.numerator / msg.denominator
             }
-            if ts != info['time_signature']:
-                assert not played_channels
-            info['time_signature'] = ts
+            check(not played_channels or ts ==
+                  info['time_signature'], "Time signature changed")
         elif msg.type == 'key_signature':
-            if played_channels and info.get('key') != msg.key:
-                raise MidiFormatError('Key signature changed')
+            check(not played_channels or info['key']
+                  == msg.key, "Key signature changed")
             info['key'] = msg.key
         elif msg.type == 'set_tempo':
-            if tempo:
+            if msg.tempo != tempo:
                 tempo2total_time[tempo] += msg.time - tempo_change_time
-            tempo = msg.tempo
-            tempo_change_time = msg.time
-        elif msg.type == 'control_change':
-            if msg.control == 7:
-                channels[msg.channel]['volume'] = msg.value / 127
-            if msg.control == 10:
-                channels[msg.channel]['pan'] = msg.value
+                tempo = msg.tempo
+                tempo_change_time = msg.time
         elif msg.type == 'program_change':
             if (channels[msg.channel]['program'] != msg.program and
                     msg.channel in played_channels):
-                non_playable_channels.add(msg.channel)
+                modified_channels.add(msg.channel)
             channels[msg.channel]['program'] = msg.program
         elif msg.type in ['note_on', 'note_off', 'pitchwheel']:
             if msg.type == 'note_on':
                 if msg.velocity == 0:
-                    msg = Message('note_off', channel=msg.channel, note=msg.note,
-                                  velocity=msg.velocity, time=msg.time)
-                    msg.velocity = int(msg.velocity * channels[msg.channel]['volume'])
+                    msg = Message('note_off', channel=msg.channel, note=msg.note, velocity=0,
+                                  time=msg.time)
+                else:
+                    check(msg.channel not in modified_channels,
+                          f"Channel {msg.channel} settings changed")
+                    played_channels.add(msg.channel)
             channels[msg.channel]['messages'].append(msg)
-            if msg.type == 'note_on':
-                if msg.channel in non_playable_channels:
-                    raise MidiFormatError(f'Channel {msg.channel} settings changed')
-                played_channels.add(msg.channel)
         else:
-            raise MidiFormatError(f'Unknown message type: {msg.type}')
+            raise MidiFormatError(f"Unknown message type: {msg.type}")
 
     tempo2total_time[tempo] += msg.time - tempo_change_time
     info['duration'] = msg.time
-    info['ticks_per_bar'] = int(mid.ticks_per_beat * 4 * info['time_signature']['value'])
+    info['ticks_per_bar'] = int(
+        mid.ticks_per_beat * 4 * info['time_signature']['value'])
 
     tempo2total_time = {k: v for k, v in tempo2total_time.items() if v}
     info['tempo2time'] = tempo2total_time
     info['tempo'] = max(tempo2total_time.items(), key=lambda x: x[1])[0]
-    if info['tempo'] is None:
-        raise MidiFormatError(f'Unknown tempo')
     info['bpm'] = int(mido.tempo2bpm(info['tempo']))
     info['n_bars'] = info['duration'] / info['ticks_per_bar']
     info['n_beats'] = info['time_signature']['numerator']
@@ -163,9 +184,9 @@ def split_channels(mid, max_time=1e6):
                 if any(msg.type == 'note_on' for msg in channel['messages'])]
 
     for channel in channels:
-        channel['instrument_id'] = get_instrument_id(channel['program'], channel['index'])
+        channel['instrument_id'] = get_instrument_id(
+            channel['program'], channel['index'])
         channel['instrument_name'] = program2instrument[channel['instrument_id']]
-        channel['volume'] = 96
 
     return channels, info
 
@@ -214,7 +235,8 @@ class ChannelConverter:
             for divisor in self.beat_divisors
             for i in range(divisor)
         })
-        self.beat_fraction2idx = {fraction: i for i, fraction in enumerate(self.beat_fractions)}
+        self.beat_fraction2idx = {fraction: i for i,
+                                  fraction in enumerate(self.beat_fractions)}
 
         self.n_notes = self.n_octaves * 7
         self.n_unpitched = self.max_percussion - self.min_percussion + 1
@@ -222,23 +244,27 @@ class ChannelConverter:
         self.n_unpitched_features = 2
 
     def channel2nchannel(self, channel):
-        nchannel = {k: deepcopy(v) for k, v in channel.items() if k != 'messages'}
+        nchannel = {k: deepcopy(v)
+                    for k, v in channel.items() if k != 'messages'}
         nchannel['notes'] = []
         pitched = is_pitched(channel['instrument_id'])
+        channel_volume = default_volume
 
-        pitch2note = {}
+        note_id2last_played_note = {}
         for msg in channel['messages']:
             if msg.type in ['note_on', 'note_off']:
-                pitch = msg.note
-                if pitch in pitch2note:
-                    note = pitch2note[pitch]
+                note_id = msg.note
+                if note_id in note_id2last_played_note:
+                    note = note_id2last_played_note[note_id]
                     note['end_time'] = msg.time
-                    del pitch2note[pitch]
+                    del note_id2last_played_note[note_id]
                 if msg.type == 'note_on':
-                    note = note_id2note(pitch, pitched)
+                    note = note_id2note(note_id, pitched)
+                    # todo: keep track of velocity when converting back to the list of messages
+                    velocity = msg.velocity * channel_volume / (max_velocity * max_volume)
                     note.update(
-                        pitch=pitch,
-                        velocity=msg.velocity,
+                        note_id=note_id,
+                        velocity=velocity,
                         time=msg.time,
                         end_time=msg.time,
                         time_sec=mido.tick2second(
@@ -248,7 +274,9 @@ class ChannelConverter:
                         )
                     )
                     nchannel['notes'].append(note)
-                    pitch2note[pitch] = note
+                    note_id2last_played_note[note_id] = note
+            elif msg.type == 'control_change' and msg.control == 7:
+                channel_volume = msg.value
 
         for note in nchannel['notes']:
             note['duration'] = note['end_time'] - note['time']
@@ -296,7 +324,8 @@ class ChannelConverter:
         for note in qchannel['notes']:
             time = note['time']
             duration = note.get('duration')
-            qtime, divisor = min(note_quantizations(time, duration), key=lambda x: x[1])[0]
+            qtime, divisor = min(note_quantizations(
+                time, duration), key=lambda x: x[1])[0]
             note['qtime'] = int(qtime)
             note['qduration'] = note['end_time'] - note['qtime']
 
@@ -358,7 +387,8 @@ class ChannelConverter:
             features = [note['qduration'], note['velocity'] / 127]
             if pitched:
                 features.append(note['sharp'])
-            partial_beat[self.beat_fraction2idx[note['beat_fraction']]][note_idx] = features
+            partial_beat[self.beat_fraction2idx[note['beat_fraction']]
+                         ][note_idx] = features
 
             bar = bars[note['bar']]
             bar[note['beat']] = np.maximum(bar[note['beat']], partial_beat)
@@ -446,7 +476,8 @@ class ChannelConverter:
 
 # todo: merge the same instruments, remember the volume
 def merge_channels_by_instrument(channels):
-    channels_grouped = group_by(channels, 'instrument_name', func=merge_channels)
+    channels_grouped = group_by(
+        channels, 'instrument_name', func=merge_channels)
     channels_grouped = list(channels_grouped.values())
     return channels_grouped
 
@@ -463,8 +494,10 @@ def get_input(filename):
     cc = ChannelConverter(info)
     nchannels = [cc.channel2nchannel(channel) for channel in channels]
 
-    notes_dist_per_instrument = [get_notes_dist(info, nchannel) for nchannel in nchannels]
-    notes_dist = list2df(notes_dist_per_instrument).reindex(columns=notes).sum()
+    notes_dist_per_instrument = [get_notes_dist(
+        info, nchannel) for nchannel in nchannels]
+    notes_dist = list2df(notes_dist_per_instrument).reindex(
+        columns=notes).sum()
     notes_dist = np.asarray(notes_dist)
     normalize_dist(notes_dist)
 
