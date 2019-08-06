@@ -8,7 +8,7 @@ import numpy as np
 import mido
 from mido import Message, MidiFile
 
-from py_utils import group_by
+from py_utils import group_by, flatten
 from py_utils.data import list2df
 from py_utils.math import round_number, normalize_dist
 
@@ -21,7 +21,7 @@ from style.midi import (
     max_volume,
     max_velocity,
 )
-from style.scales import interval2note, note2interval, get_notes_dist, notes, get_scale
+from style.scales import interval2note, note2interval, get_notes_dist, note_names, get_scale
 from style.exceptions import MidiFormatError
 
 
@@ -64,28 +64,91 @@ def note2note_id(note, pitched=True):
     return int(note['note'])
 
 
-def merge_tracks(tracks):
-    """Merge all events to a single track and apply global timing."""
+def merge_tracks(tracks, apply_global_timing=False):
     msgs = []
     for track in tracks:
         time = 0
         for msg in track:
             msg = copy(msg)
-            time += msg.time
-            msg.time = time
+            if apply_global_timing:
+                time += msg.time
+                msg.time = time
             msgs.append(msg)
-    msgs = sorted(msgs, key=lambda x: x.time)
+    if apply_global_timing:
+        msgs = sorted(msgs, key=lambda x: x.time)
     return list(msgs)
 
 
-def split_channels(mid, max_time=1e6):
-    def check(condition, error_message):
-        if not condition:
-            raise MidiFormatError(error_message)
+def split_channels(mid):
+    global_messages = []
+    channels = defaultdict(list)
+    for msg in merge_tracks(mid.tracks, apply_global_timing=True):
+        msg = copy(msg)
+        if hasattr(msg, 'channel'):
+            channels[msg.channel].append(msg)
+        else:
+            global_messages.append(msg)
+
+    return global_messages, list(channels.values())
+
+
+messages_to_include = {
+    'note_on',
+    'note_off',
+    'time_signature',
+    'key_signature',
+    'set_tempo',
+    'program_change',
+    'control_change',
+}
+
+messages_to_ignore = {
+    'smpte_offset',
+    'midi_port',
+    'sysex',
+    'end_of_track',
+    'track_name',
+    'copyright',
+    'lyrics',
+    'marker',
+    'sequencer_specific',
+    'channel_prefix',
+    'text',
+    'instrument_name',
+    'aftertouch',
+    'polytouch',
+    'cue_marker',
+    'unknown_meta',
+    'sequence_number',
+}
+
+known_messages = messages_to_include | messages_to_ignore
+
+
+def check(condition, error_message):
+    if not condition:
+        raise MidiFormatError(error_message)
+
+
+def get_midi_info(global_messages, channels, ticks_per_beat):
+    tempo = default_tempo
+    tempo_change_time = 0
+    tempo2total_time = defaultdict(int)
+
+    channels_messages = flatten(channels)
+    notes_on = filter(lambda x: x.type == 'note_on', channels_messages)
+    notes_off = filter(lambda x: x.type == 'note_off', channels_messages)
+    note_on_times = [n.time for n in notes_on]
+    note_off_times = [n.time for n in notes_off]
+    first_note_time, last_note_time = min(note_on_times), max(note_on_times)
+    duration = max(note_on_times + note_off_times)
+
+    def is_during_song(time):
+        return first_note_time <= time <= last_note_time
 
     info = {
-        'ticks_per_beat': mid.ticks_per_beat,
-        'bpm': [],
+        'ticks_per_beat': ticks_per_beat,
+        'duration': duration,
         'time_signature': {
             'numerator': 4,
             'denominator': 4,
@@ -93,100 +156,94 @@ def split_channels(mid, max_time=1e6):
         },
         'key': None,
     }
-    channels = defaultdict(
-        lambda: {'messages': [], 'program': 0})
-    played_channels = set()
-    modified_channels = set()
 
-    messages_to_ignore = [
-        'smpte_offset',
-        'midi_port',
-        'sysex',
-        'end_of_track',
-        'track_name',
-        'copyright',
-        'lyrics',
-        'marker',
-        'sequencer_specific',
-        'channel_prefix',
-        'text',
-        'instrument_name',
-        'aftertouch',
-        'polytouch',
-        'cue_marker',
-        'unknown_meta',
-        'sequence_number',
-        'control_change',
-    ]
-
-    tempo = default_tempo
-    tempo_change_time = 0
-    tempo2total_time = defaultdict(int)
-
-    for msg in merge_tracks(mid.tracks):
+    for msg in global_messages:
         if msg.type in messages_to_ignore:
             continue
-        check(msg.time <= max_time, "MIDI file too long")
-        msg = copy(msg)
 
         if msg.type == 'time_signature':
-            ts = info['time_signature'] = {
+            ts = {
                 'numerator': msg.numerator,
                 'denominator': msg.denominator,
                 'value': msg.numerator / msg.denominator
             }
-            check(not played_channels or ts ==
-                  info['time_signature'], "Time signature changed")
+            if ts != info['time_signature']:
+                check(not is_during_song(msg.time), "Time signature changed")
+                info['time_signature'] = ts
         elif msg.type == 'key_signature':
-            check(not played_channels or info['key']
-                  == msg.key, "Key signature changed")
-            info['key'] = msg.key
+            if msg.key != info['key']:
+                check(not is_during_song(msg.time), "Key signature changed")
+                info['key'] = msg.key
         elif msg.type == 'set_tempo':
             if msg.tempo != tempo:
                 tempo2total_time[tempo] += msg.time - tempo_change_time
                 tempo = msg.tempo
                 tempo_change_time = msg.time
-        elif msg.type == 'program_change':
-            if (channels[msg.channel]['program'] != msg.program and
-                    msg.channel in played_channels):
-                modified_channels.add(msg.channel)
-            channels[msg.channel]['program'] = msg.program
+        elif msg.type not in known_messages:
+            raise MidiFormatError(f"Unknown message type: {msg.type}")
+
+    info['ticks_per_bar'] = int(ticks_per_beat * 4 * info['time_signature']['value'])
+    info['n_bars'] = duration / info['ticks_per_bar']
+    info['n_beats'] = info['time_signature']['numerator']
+
+    tempo2total_time[tempo] += duration - tempo_change_time
+    tempo2total_time = {k: v for k, v in tempo2total_time.items() if v}
+    info['tempo2time'] = tempo2total_time
+
+    info['tempo'] = max(tempo2total_time.items(), key=lambda x: x[1])[0]
+    info['bpm'] = int(mido.tempo2bpm(info['tempo']))
+
+    return info
+
+
+def clean_channel_messages(channel_messages):
+    channel_info = {
+        'messages': [],
+        'program': 0,
+        'index': channel_messages[0].channel,
+    }
+    played = False
+    modified = False
+
+    for msg in channel_messages:
+        if msg.type in messages_to_ignore:
+            continue
+        msg = copy(msg)
+
+        if msg.type == 'program_change':
+            if channel_info['program'] != msg.program and played:
+                modified = True
+            channel_info['program'] = msg.program
         elif msg.type in ['note_on', 'note_off', 'pitchwheel']:
             if msg.type == 'note_on':
                 if msg.velocity == 0:
                     msg = Message('note_off', channel=msg.channel, note=msg.note, velocity=0,
                                   time=msg.time)
                 else:
-                    check(msg.channel not in modified_channels,
-                          f"Channel {msg.channel} settings changed")
-                    played_channels.add(msg.channel)
-            channels[msg.channel]['messages'].append(msg)
-        else:
+                    check(not modified, f"Channel {msg.channel} settings changed")
+                    played = True
+        elif msg.type not in known_messages:
             raise MidiFormatError(f"Unknown message type: {msg.type}")
+        channel_info['messages'].append(msg)
 
-    tempo2total_time[tempo] += msg.time - tempo_change_time
-    info['duration'] = msg.time
-    info['ticks_per_bar'] = int(
-        mid.ticks_per_beat * 4 * info['time_signature']['value'])
+    channel_info['instrument_id'] = get_instrument_id(
+        channel_info['program'], channel_info['index'])
+    channel_info['instrument_name'] = program2instrument[channel_info['instrument_id']]
 
-    tempo2total_time = {k: v for k, v in tempo2total_time.items() if v}
-    info['tempo2time'] = tempo2total_time
-    info['tempo'] = max(tempo2total_time.items(), key=lambda x: x[1])[0]
-    info['bpm'] = int(mido.tempo2bpm(info['tempo']))
-    info['n_bars'] = info['duration'] / info['ticks_per_bar']
-    info['n_beats'] = info['time_signature']['numerator']
+    return channel_info
 
-    for k, v in channels.items():
-        v['index'] = k
+# max_time=1e6
+# check(msg.time <= max_time, "MIDI file too long")
 
-    channels = sorted(channels.values(), key=lambda x: x['index'])
+
+def read_midi(mid):
+    global_messages, channels = split_channels(mid)
+    info = get_midi_info(global_messages, channels, mid.ticks_per_beat)
+    channels = [clean_channel_messages(c) for c in channels]
+
+    channels = sorted(channels, key=lambda x: x['index'])
     channels = [channel for channel in channels
                 if any(msg.type == 'note_on' for msg in channel['messages'])]
-
-    for channel in channels:
-        channel['instrument_id'] = get_instrument_id(
-            channel['program'], channel['index'])
-        channel['instrument_name'] = program2instrument[channel['instrument_id']]
 
     return channels, info
 
@@ -497,7 +554,7 @@ def get_input(filename):
     notes_dist_per_instrument = [get_notes_dist(
         info, nchannel) for nchannel in nchannels]
     notes_dist = list2df(notes_dist_per_instrument).reindex(
-        columns=notes).sum()
+        columns=note_names).sum()
     notes_dist = np.asarray(notes_dist)
     normalize_dist(notes_dist)
 

@@ -6,8 +6,8 @@ from py_utils.math import normalize_dist
 from py_utils.metrics import cross_entropy
 from py_utils import group_by
 
-notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-interval2note = dict(enumerate(notes))
+note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+interval2note = dict(enumerate(note_names))
 note2interval = {note: interval for interval, note in interval2note.items()}
 
 intervals2chord = {
@@ -126,7 +126,7 @@ def get_scales(note2time=None, notes_dist=None, modes=None, degrees=None):
     modes = modes or all_modes
     degrees = degrees or list(range(1, 8))
     if notes_dist is None:
-        notes_dist = np.array([note2time.get(note, 0) for note in notes])
+        notes_dist = np.array([note2time.get(note, 0) for note in note_names])
         normalize_dist(notes_dist)
 
     degrees = [d - 1 for d in degrees]
@@ -134,7 +134,7 @@ def get_scales(note2time=None, notes_dist=None, modes=None, degrees=None):
     normalize_dist(target_dist)
 
     data = []
-    for i, note in enumerate(notes):
+    for i, note in enumerate(note_names):
         for mode in modes:
             intervals = (np.asarray(mode.absolute_intervals) + i) % 12
             sample_dist = notes_dist[intervals]
