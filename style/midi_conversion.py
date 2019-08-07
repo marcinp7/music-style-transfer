@@ -45,26 +45,6 @@ def get_channel_info(channel):
     return channel_info
 
 
-def note_id2note(note_id, pitched=True):
-    if pitched:
-        octave, interval = divmod(note_id, 12)
-        return {
-            'note': interval2note[interval],
-            'octave': octave - 1
-        }
-    return {
-        'note': str(note_id),
-        'octave': None,
-    }
-
-
-def note2note_id(note, pitched=True):
-    if pitched:
-        interval = note2interval[note['note']]
-        return 12 * (note['octave'] + 1) + interval
-    return int(note['note'])
-
-
 def merge_tracks(tracks, apply_global_timing=False):
     msgs = []
     for track in tracks:
@@ -125,7 +105,7 @@ messages_to_ignore = {
 }
 
 @dataclass
-class Note:
+class NoteMessage:
     type: str
     note: int
     velocity: float
@@ -226,7 +206,7 @@ def group_channel_messages(channel_messages, channel_id):
             velocity = msg.velocity * volume / (max_velocity * max_volume)
             if message_type == 'note_on':
                 assert 0 <= velocity <= 1, velocity
-            instrument_id2messages[instrument_id].append(Note(
+            instrument_id2messages[instrument_id].append(NoteMessage(
                 type=message_type,
                 note=msg.note,
                 velocity=velocity,
@@ -258,9 +238,6 @@ def read_midi(mid):
     return instruments, info
 
 
-
-
-
 def note2scale_loc(note, mode, tonic):
     tonic_interval = note2interval[tonic]
     interval = note2interval[note['note']] - tonic_interval
@@ -289,6 +266,36 @@ def scale_loc2note(octave, degree, mode, tonic, sharp=False):
         note=interval2note[interval],
         octave=octave,
     )
+
+
+@dataclass
+class Note:
+    key: str
+    octave: int
+    time: int = None
+    end_time: int = None
+    note_id: int = None
+    duration: int = None
+    velocity: float = None
+    time_sec: float = None
+
+
+def note_id2key_octave(note_id, pitched=True):
+    if pitched:
+        octave, interval = divmod(note_id, 12)
+        key = interval2note[interval]
+        octave = octave - 1
+    else:
+        key = str(note_id)
+        octave = None
+    return key, octave
+
+
+def note2note_id(note, pitched=True):
+    if pitched:
+        interval = note2interval[note.key]
+        return 12 * (note.octave + 1) + interval
+    return int(note.key)
 
 
 class ChannelConverter:
@@ -325,11 +332,13 @@ class ChannelConverter:
                 note_id = msg.note
                 if note_id in note_id2last_played_note:
                     note = note_id2last_played_note[note_id]
-                    note['end_time'] = msg.time
+                    note.end_time = msg.time
                     del note_id2last_played_note[note_id]
                 if msg.type == 'note_on':
-                    note = note_id2note(note_id, pitched)
-                    note.update(
+                    key, octave = note_id2key_octave(note_id, pitched)
+                    note = Note(
+                        key=key,
+                        octave=octave,
                         note_id=note_id,
                         velocity=msg.velocity,
                         time=msg.time,
@@ -344,7 +353,7 @@ class ChannelConverter:
                     note_id2last_played_note[note_id] = note
 
         for note in nchannel['notes']:
-            note['duration'] = note['end_time'] - note['time']
+            note.duration = note.end_time - note.time
 
         return nchannel
 

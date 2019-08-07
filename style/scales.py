@@ -103,8 +103,8 @@ all_modes = [create_mode(major_mode, shift) for shift in range(len(Mode.names))]
 
 
 def get_notes_dist(info, nchannel):
-    note2time = group_by(nchannel['notes'], 'note', func=lambda xs: sum(
-        x['duration'] * x['velocity'] for x in xs))
+    note2time = group_by(nchannel['notes'], attr='key', func=lambda xs: sum(
+        x.duration * x.velocity for x in xs))
     note2time = {note: mido.tick2second(
         time, info['ticks_per_beat'], info['tempo']) for note, time in note2time.items()}
     note2time['instrument'] = nchannel['instrument_name']
