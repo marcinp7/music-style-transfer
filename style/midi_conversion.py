@@ -240,11 +240,11 @@ def read_midi(mid):
 
 def note2scale_loc(note, mode, tonic):
     tonic_interval = note2interval[tonic]
-    interval = note2interval[note['note']] - tonic_interval
+    interval = note2interval[note.key] - tonic_interval
     degree = mode.get_degree(interval)
     sharp = not isinstance(degree, int)
     degree = int(degree)
-    octave = note['octave']
+    octave = note.octave
     if interval < 0:
         octave -= 1
     return dict(
@@ -278,6 +278,17 @@ class Note:
     duration: int = None
     velocity: float = None
     time_sec: float = None
+
+    scale_octave: int = None
+    scale_degree: int = None
+    sharp: bool = None
+
+    qtime: int = None
+    qduration: int = None
+
+    bar: int = None
+    beat: int = None
+    beat_fraction: Fraction = None
 
 
 def note_id2key_octave(note_id, pitched=True):
@@ -369,11 +380,9 @@ class ChannelConverter:
                     degree=None,
                     sharp=None
                 )
-            note.update(
-                scale_octave=scale_loc['octave'],
-                scale_degree=scale_loc['degree'],
-                sharp=scale_loc['sharp'],
-            )
+            note.scale_octave = scale_loc['octave']
+            note.scale_degree = scale_loc['degree']
+            note.sharp = scale_loc['sharp']
         return kchannel
 
     def kchannel2qchannel(self, kchannel, in_place=False):
@@ -396,20 +405,17 @@ class ChannelConverter:
         qchannel = kchannel if in_place else deepcopy(kchannel)
 
         for note in qchannel['notes']:
-            time = note['time']
-            duration = note.get('duration')
-            qtime, divisor = min(note_quantizations(
-                time, duration), key=lambda x: x[1])[0]
-            note['qtime'] = int(qtime)
-            note['qduration'] = note['end_time'] - note['qtime']
+            time = note.time
+            duration = note.duration
+            qtime, divisor = min(note_quantizations(time, duration), key=lambda x: x[1])[0]
+            note.qtime = int(qtime)
+            note.qduration = note.end_time - note.qtime
 
-            bar, beat, ticks = ticks2loc(note['qtime'])
+            bar, beat, ticks = ticks2loc(note.qtime)
             quants = int(ticks // divisor2ticks[divisor])
-            note.update(
-                bar=int(bar),
-                beat=int(beat),
-                beat_fraction=Fraction(quants, divisor),
-            )
+            note.bar = int(bar)
+            note.beat = int(beat)
+            note.beat_fraction = Fraction(quants, divisor)
 
         return qchannel
 
