@@ -1,6 +1,6 @@
 from collections import defaultdict
 from copy import copy, deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fractions import Fraction
 import math
 
@@ -108,8 +108,8 @@ messages_to_ignore = {
 class NoteMessage:
     type: str
     note: int
-    velocity: float
     time: int
+    velocity: float = 0
 
 known_messages = messages_to_include | messages_to_ignore
 
@@ -254,7 +254,7 @@ def note2scale_loc(note, mode, tonic):
     )
 
 
-def scale_loc2note(octave, degree, mode, tonic, sharp=False):
+def scale_loc2key_octave(octave, degree, mode, tonic, sharp=False):
     tonic_interval = note2interval[tonic]
     interval = mode.absolute_intervals[degree - 1] + tonic_interval
     if sharp:
@@ -262,16 +262,14 @@ def scale_loc2note(octave, degree, mode, tonic, sharp=False):
     if interval >= 12:
         octave += 1
         interval -= 12
-    return dict(
-        note=interval2note[interval],
-        octave=octave,
-    )
+    key = interval2note[interval]
+    return key, octave
 
 
 @dataclass
 class Note:
-    key: str
-    octave: int
+    key: str = None
+    octave: int = None
     time: int = None
     end_time: int = None
     note_id: int = None
@@ -429,25 +427,23 @@ class ChannelConverter:
 
         pitched = is_pitched(channel_info['instrument_id'])
         messages = []
-        channel_idx = channel_info['index']
+        channel_idx = channel_info['channel_id']
         for note in qchannel['notes']:
             note = copy(note)
             if pitched:
-                note_ = scale_loc2note(
-                    note['scale_octave'],
-                    note['scale_degree'],
+                key, octave = scale_loc2key_octave(
+                    note.scale_octave,
+                    note.scale_degree,
                     self.mode,
                     self.tonic,
-                    note['sharp']
+                    note.sharp
                 )
-                note.update(note_)
+                note = replace(note, key=key, octave=octave)
             note_id = note2note_id(note, pitched)
-            time = loc2ticks(note['bar'], note['beat'], note['beat_fraction'])
+            time = loc2ticks(note.bar, note.beat, note.beat_fraction)
 
-            note_on = Message('note_on', channel=channel_idx,
-                              note=note_id, velocity=note['velocity'], time=time)
-            note_off = Message('note_off', channel=channel_idx,
-                               note=note_id, time=time+note['qduration'])
+            note_on = NoteMessage('note_on', note=note_id, velocity=note.velocity, time=time)
+            note_off = NoteMessage('note_off', note=note_id, time=time+note.qduration)
             messages += [note_on, note_off]
 
         channel = deepcopy(channel_info)
@@ -464,14 +460,14 @@ class ChannelConverter:
                 continue
 
             partial_beat = self.get_empty_beat(pitched)
-            features = [note['qduration'], note['velocity'] / 127]
+            features = [note.qduration, note.velocity]
             if pitched:
-                features.append(note['sharp'])
-            partial_beat[self.beat_fraction2idx[note['beat_fraction']]
+                features.append(note.sharp)
+            partial_beat[self.beat_fraction2idx[note.beat_fraction]
                          ][note_idx] = features
 
-            bar = bars[note['bar']]
-            bar[note['beat']] = np.maximum(bar[note['beat']], partial_beat)
+            bar = bars[note.bar]
+            bar[note.beat] = np.maximum(bar[note.beat], partial_beat)
         return bars
 
     def vchannel2qchannel(self, channel_info, vchannel):
@@ -485,18 +481,29 @@ class ChannelConverter:
                     note_inds = np.nonzero(velocities)[0]
                     for note_idx in note_inds:
                         vnote = vnotes[note_idx]
+                        key, scale_degree, scale_octave, sharp = 4 * (None,)
                         if pitched:
                             duration, velocity, sharp = vnote
+                            degree = note_idx % 7 + 1
+                            note_idx -= degree - 1
+                            octave = note_idx // 7
+                            scale_degree = degree
+                            scale_octave = octave
+                            sharp = sharp
                         else:
                             duration, velocity = vnote
                             sharp = False
-                        note = self.idx2note(note_idx, pitched, sharp)
-                        note.update(
+                            key = note_idx+self.min_percussion
+                        note = Note(
+                            key=key,
+                            scale_degree=scale_degree,
+                            scale_octave=scale_octave,
+                            sharp=sharp,
                             bar=bar_idx,
                             beat=beat_idx,
                             beat_fraction=fraction,
                             qduration=int(duration),
-                            velocity=int(velocity * 127),
+                            velocity=velocity,
                         )
                         qchannel['notes'].append(note)
         return qchannel
@@ -525,32 +532,31 @@ class ChannelConverter:
 
     def note2idx(self, note, pitched):
         if pitched:
-            octave = note['scale_octave']
-            degree = note['scale_degree']
+            octave = note.scale_octave
+            degree = note.scale_degree
             note_idx = octave * 7 + (degree - 1)
             if note_idx < 0 or note_idx >= self.n_notes:
                 raise ValueError()
             return note_idx
         else:
-            note_idx = int(note['note'])
+            note_idx = int(note.key)
             if note_idx < self.min_percussion or note_idx > self.max_percussion:
                 raise ValueError()
             note_idx -= self.min_percussion
             return note_idx
 
-    def idx2note(self, note_idx, pitched, sharp=False):
-        if pitched:
-            degree = note_idx % 7 + 1
-            note_idx -= degree - 1
-            octave = note_idx // 7
-            return dict(
-                scale_degree=degree,
-                scale_octave=octave,
-                sharp=sharp,
-            )
-        return dict(
-            note=note_idx+self.min_percussion,
-        )
+    # def idx2note_info(self, note_idx, pitched, sharp=False):
+    #     key, scale_degree, scale_octave, sharp = 4 * (None,)
+    #     if pitched:
+    #         degree = note_idx % 7 + 1
+    #         note_idx -= degree - 1
+    #         octave = note_idx // 7
+    #         scale_degree=degree,
+    #         scale_octave=octave
+    #         sharp=sharp
+    #     else:
+    #         key = note_idx+self.min_percussion
+    #     return key, scale_degree, scale_octave, sharp
 
 
 def merge_channels_by_instrument(channels):
