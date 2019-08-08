@@ -88,6 +88,9 @@ class Mode:
     def get_degree(self, interval):
         return self.interval2degree[interval % 12]
 
+    def get_degree(self, interval):
+        return self.interval2degree[interval % 12]
+
     def __repr__(self):
         return f'{self.name} mode'
 
@@ -95,6 +98,13 @@ class Mode:
 def create_mode(mode, shift):
     intervals = mode.intervals
     return Mode(intervals[shift:] + intervals[:shift], shift)
+
+
+def get_relative_degree(interval, source_scale, target_scale):
+    relative_shift = (source_scale.shift - target_scale.shift) % 7
+    relative_interval = target_scale.tonic_intervals[relative_shift]
+    relative_degree = target_scale.get_degree(interval + relative_interval)
+    return relative_degree
 
 
 major_mode = Mode([2, 2, 1, 2, 2, 2, 1])
