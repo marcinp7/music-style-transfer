@@ -122,17 +122,19 @@ def get_notes_dist(info, nchannel):
 
 
 major_dist = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
-major_dist = major_dist[major_mode.absolute_intervals]
-normalize_dist(major_dist)
+major_dist = normalize_dist(major_dist)
 
 minor_dist = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
-minor_dist = minor_dist[minor_mode.absolute_intervals]
-normalize_dist(minor_dist)
+minor_dist = normalize_dist(minor_dist)
 
 target_mode_dist = (major_dist + minor_dist) / 2
 
+# notes typically used in major in minor scales
+typical_major_intervals = [0, 2, 4, 5, 6, 7, 9, 10, 11]
+typical_minor_intervals = [0, 1, 2, 3, 5, 7, 8, 9, 10, 11]
 
-def get_scales(note2time=None, notes_dist=None, modes=None, degrees=None):
+
+def get_all_modes(note2time=None, notes_dist=None, modes=None, degrees=None):
     modes = modes or all_modes
     degrees = degrees or list(range(1, 8))
     if notes_dist is None:
@@ -163,6 +165,45 @@ def get_scales(note2time=None, notes_dist=None, modes=None, degrees=None):
         d['loss'] = d['cross_entropy'] * (2 - d['coverage'])
 
     return data
+
+
+def get_scales(note2time=None, notes_dist=None):
+    if notes_dist is None:
+        notes_dist = np.array([note2time.get(note, 0) for note in note_names])
+        notes_dist = normalize_dist(notes_dist)
+
+    data = []
+    for key_score in get_key_scores(notes_dist, major_dist, typical_major_intervals):
+        key_score['mode'] = 'major'
+        data.append(key_score)
+    for key_score in get_key_scores(notes_dist, minor_dist, typical_minor_intervals):
+        key_score['mode'] = 'minor'
+        data.append(key_score)
+
+    for d in data:
+        d['loss'] = d['cross_entropy'] * (1 - d['ndcg'])
+
+    return data
+
+
+def shift_intervals(intervals, shift):
+    return (np.asarray(intervals) + shift) % 12
+
+
+def get_key_scores(notes_dist, scale_dist, typical_intervals):
+    for key in note_names:
+        most_common = sorted(enumerate(-notes_dist), key=lambda x: x[1])
+        most_common = [x[0] for x in most_common]
+        most_common = sorted(enumerate(most_common), key=lambda x: x[1])
+        most_common = [x[0] for x in most_common]
+        from py_utils import metrics
+        yield dict(
+            key=key,
+            coverage=notes_dist[typical_intervals].sum(),
+            cross_entropy=cross_entropy(notes_dist, scale_dist),
+            ndcg=metrics.ndcg(scale_dist, most_common),
+        )
+        notes_dist = np.concatenate([notes_dist[1:], notes_dist[:1]])
 
 
 def get_scale(*args, **kwargs):
