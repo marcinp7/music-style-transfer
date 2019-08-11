@@ -6,9 +6,9 @@ from py_utils.math import normalize_dist
 from py_utils.metrics import cross_entropy
 from py_utils import group_by
 
-note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-interval2note = dict(enumerate(note_names))
-note2interval = {note: interval for interval, note in interval2note.items()}
+key_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+interval2key = dict(enumerate(key_names))
+key2interval = {key: interval for interval, key in interval2key.items()}
 
 intervals2chord = {
     (0, 4, 7): 'M',
@@ -112,13 +112,13 @@ minor_mode = create_mode(major_mode, shift=-2)
 all_modes = [create_mode(major_mode, shift) for shift in range(len(Mode.names))]
 
 
-def get_notes_dist(info, nchannel):
-    note2time = group_by(nchannel['notes'], attr='key', func=lambda xs: sum(
+def get_keys_dist(info, nchannel):
+    key2time = group_by(nchannel['notes'], attr='key', func=lambda xs: sum(
         x.duration * x.velocity for x in xs))
-    note2time = {note: mido.tick2second(
-        time, info['ticks_per_beat'], info['tempo']) for note, time in note2time.items()}
-    note2time['instrument'] = nchannel['instrument_name']
-    return note2time
+    key2time = {key: mido.tick2second(
+        time, info['ticks_per_beat'], info['tempo']) for key, time in key2time.items()}
+    key2time['instrument'] = nchannel['instrument_name']
+    return key2time
 
 
 major_dist = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
@@ -134,28 +134,28 @@ typical_major_intervals = [0, 2, 4, 5, 6, 7, 9, 10, 11]
 typical_minor_intervals = [0, 1, 2, 3, 5, 7, 8, 9, 10, 11]
 
 
-def get_all_modes(note2time=None, notes_dist=None, modes=None, degrees=None):
+def get_all_modes(key2time=None, keys_dist=None, modes=None, degrees=None):
     modes = modes or all_modes
     degrees = degrees or list(range(1, 8))
-    if notes_dist is None:
-        notes_dist = np.array([note2time.get(note, 0) for note in note_names])
-        normalize_dist(notes_dist)
+    if keys_dist is None:
+        keys_dist = np.array([key2time.get(key, 0) for key in key_names])
+        normalize_dist(keys_dist)
 
     degrees = [d - 1 for d in degrees]
     target_dist = target_mode_dist[degrees]
     normalize_dist(target_dist)
 
     data = []
-    for i, note in enumerate(note_names):
+    for i, key in enumerate(key_names):
         for mode in modes:
             intervals = (np.asarray(mode.absolute_intervals) + i) % 12
-            sample_dist = notes_dist[intervals]
+            sample_dist = keys_dist[intervals]
             coverage = sample_dist.sum()
             sample_dist = sample_dist[degrees]
             normalize_dist(sample_dist)
             data.append({
                 'coverage': coverage,
-                'tonic': note,
+                'tonic': key,
                 'mode': mode,
                 'cross_entropy': cross_entropy(sample_dist, target_dist),
                 'dist': sample_dist,
@@ -167,16 +167,16 @@ def get_all_modes(note2time=None, notes_dist=None, modes=None, degrees=None):
     return data
 
 
-def get_scales(note2time=None, notes_dist=None):
-    if notes_dist is None:
-        notes_dist = np.array([note2time.get(note, 0) for note in note_names])
-        notes_dist = normalize_dist(notes_dist)
+def get_scales(key2time=None, keys_dist=None):
+    if keys_dist is None:
+        keys_dist = np.array([key2time.get(key, 0) for key in key_names])
+        keys_dist = normalize_dist(keys_dist)
 
     data = []
-    for key_score in get_key_scores(notes_dist, major_dist, typical_major_intervals):
+    for key_score in get_key_scores(keys_dist, major_dist, typical_major_intervals):
         key_score['mode'] = 'major'
         data.append(key_score)
-    for key_score in get_key_scores(notes_dist, minor_dist, typical_minor_intervals):
+    for key_score in get_key_scores(keys_dist, minor_dist, typical_minor_intervals):
         key_score['mode'] = 'minor'
         data.append(key_score)
 
@@ -190,23 +190,27 @@ def shift_intervals(intervals, shift):
     return (np.asarray(intervals) + shift) % 12
 
 
-def get_key_scores(notes_dist, scale_dist, typical_intervals):
-    for key in note_names:
-        most_common = sorted(enumerate(-notes_dist), key=lambda x: x[1])
+def get_key_scores(keys_dist, scale_dist, typical_intervals):
+    for key in key_names:
+        most_common = sorted(enumerate(-keys_dist), key=lambda x: x[1])
         most_common = [x[0] for x in most_common]
         most_common = sorted(enumerate(most_common), key=lambda x: x[1])
         most_common = [x[0] for x in most_common]
         from py_utils import metrics
         yield dict(
             key=key,
-            coverage=notes_dist[typical_intervals].sum(),
-            cross_entropy=cross_entropy(notes_dist, scale_dist),
+            coverage=keys_dist[typical_intervals].sum(),
+            cross_entropy=cross_entropy(keys_dist, scale_dist),
             ndcg=metrics.ndcg(scale_dist, most_common),
         )
-        notes_dist = np.concatenate([notes_dist[1:], notes_dist[:1]])
+        keys_dist = np.concatenate([keys_dist[1:], keys_dist[:1]])
 
 
 def get_scale(*args, **kwargs):
     scales = get_scales(*args, **kwargs)
     scale = min(scales, key=lambda x: x['loss'])
+    if scale['mode'] == 'major':
+        scale['mode'] = major_mode
+    elif scale['mode'] == 'minor':
+        scale['mode'] = minor_mode
     return scale

@@ -7,7 +7,7 @@ import math
 import numpy as np
 
 import mido
-from mido import Message, MidiFile
+from mido import MidiFile
 
 from py_utils import group_by, flatten
 from py_utils.data import list2df
@@ -23,10 +23,10 @@ from style.midi import (
     max_velocity,
 )
 from style.scales import (
-    interval2note,
-    note2interval,
-    get_notes_dist,
-    note_names,
+    interval2key,
+    key2interval,
+    get_keys_dist,
+    key_names,
     get_scale,
     get_relative_degree,
     major_mode,
@@ -72,7 +72,6 @@ def split_channels(mid):
     global_messages = []
     channels = defaultdict(list)
     for msg in merge_tracks(mid.tracks, apply_global_timing=True):
-        msg = copy(msg)
         if hasattr(msg, 'channel'):
             channels[msg.channel].append(msg)
         else:
@@ -256,8 +255,8 @@ degree2accidental = {
 
 
 def note2scale_loc(note, mode, tonic):
-    tonic_interval = note2interval[tonic]
-    interval = note2interval[note.key] - tonic_interval
+    tonic_interval = key2interval[tonic]
+    interval = key2interval[note.key] - tonic_interval
     degree = mode.get_degree(interval)
     if isinstance(degree, int):
         accidental = 'none'
@@ -276,7 +275,7 @@ def note2scale_loc(note, mode, tonic):
 
 
 def scale_loc2key_octave(octave, degree, mode, tonic, accidental=None):
-    tonic_interval = note2interval[tonic]
+    tonic_interval = key2interval[tonic]
     interval = mode.absolute_intervals[degree - 1] + tonic_interval
     if accidental == 'sharp':
         interval += 1
@@ -285,7 +284,7 @@ def scale_loc2key_octave(octave, degree, mode, tonic, accidental=None):
     if interval >= 12:
         octave += 1
         interval -= 12
-    key = interval2note[interval]
+    key = interval2key[interval]
     return key, octave
 
 
@@ -315,7 +314,7 @@ class Note:
 def note_id2key_octave(note_id, pitched=True):
     if pitched:
         octave, interval = divmod(note_id, 12)
-        key = interval2note[interval]
+        key = interval2key[interval]
         octave = octave - 1
     else:
         key = str(note_id)
@@ -325,7 +324,7 @@ def note_id2key_octave(note_id, pitched=True):
 
 def note2note_id(note, pitched=True):
     if pitched:
-        interval = note2interval[note.key]
+        interval = key2interval[note.key]
         return 12 * (note.octave + 1) + interval
     return int(note.key)
 
@@ -394,7 +393,7 @@ class ChannelConverter:
         pitched = is_pitched(nchannel['instrument_id'])
         for note in kchannel['notes']:
             if pitched:
-                scale_loc = note2scale_loc(note, self.mode, self.tonic)
+                scale_loc = note2scale_loc(note, self.mode, self.key)
             else:
                 scale_loc = dict(
                     octave=None,
@@ -450,7 +449,6 @@ class ChannelConverter:
 
         pitched = is_pitched(channel_info['instrument_id'])
         messages = []
-        channel_idx = channel_info['channel_id']
         for note in qchannel['notes']:
             note = copy(note)
             if pitched:
@@ -458,7 +456,7 @@ class ChannelConverter:
                     note.scale_octave,
                     note.scale_degree,
                     self.mode,
-                    self.tonic,
+                    self.key,
                     note.accidental,
                 )
                 note = replace(note, key=key, octave=octave)
@@ -549,8 +547,8 @@ class ChannelConverter:
         return self.info['scale']['mode']
 
     @property
-    def tonic(self):
-        return self.info['scale']['tonic']
+    def key(self):
+        return self.info['scale']['key']
 
     @property
     def n_bars(self):
@@ -600,14 +598,14 @@ def get_input(filename):
     cc = ChannelConverter(info)
     nchannels = [cc.channel2nchannel(channel) for channel in channels]
 
-    notes_dist_per_instrument = [get_notes_dist(
+    keys_dist_per_instrument = [get_keys_dist(
         info, nchannel) for nchannel in nchannels]
-    notes_dist = list2df(notes_dist_per_instrument).reindex(
-        columns=note_names).sum()
-    notes_dist = np.asarray(notes_dist)
-    normalize_dist(notes_dist)
+    keys_dist = list2df(keys_dist_per_instrument).reindex(
+        columns=key_names).sum()
+    keys_dist = np.asarray(keys_dist)
+    normalize_dist(keys_dist)
 
-    scale = get_scale(notes_dist=notes_dist)
+    scale = get_scale(keys_dist=keys_dist)
     info['scale'] = scale
 
     kchannels = [cc.nchannel2kchannel(nchannel) for nchannel in nchannels]
