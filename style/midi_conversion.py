@@ -111,12 +111,14 @@ messages_to_ignore = {
     'sequence_number',
 }
 
+
 @dataclass
 class NoteMessage:
     type: str
     note: int
     time: int
     velocity: float = 0
+
 
 known_messages = messages_to_include | messages_to_ignore
 

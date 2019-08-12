@@ -6,8 +6,6 @@ import re
 import mido
 from mido import Message, MetaMessage, MidiFile, MidiTrack
 
-from py_utils import flatten
-
 
 here = os.path.dirname(__file__)
 
