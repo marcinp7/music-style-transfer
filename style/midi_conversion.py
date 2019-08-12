@@ -331,6 +331,18 @@ def note2note_id(note, pitched=True):
     return int(note.key)
 
 
+def get_notes_dist(info, nchannel):
+    note2time = group_by(
+        nchannel['notes'],
+        key=lambda x: (x.key, x.octave),
+        func=lambda xs: sum(x.duration * x.velocity for x in xs),
+    )
+    note2time = {key: mido.tick2second(time, info['ticks_per_beat'], info['tempo'])
+                 for key, time in note2time.items()}
+    note2time['instrument'] = nchannel['instrument_name']
+    return note2time
+
+
 class ChannelConverter:
     def __init__(self, info, beat_divisors=(8, 3), n_octaves=8, min_percussion=35,
                  max_percussion=81):
