@@ -3,8 +3,7 @@ import torch
 
 from py_utils.pytorch import total_size, remove_dims, tensor_view
 
-from style.exceptions import MidiFormatError
-from style.midi import get_input
+# from style.midi import get_input
 
 
 def flatten_channel(x):

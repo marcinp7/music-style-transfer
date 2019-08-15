@@ -21,6 +21,7 @@ from style.midi import (
     default_volume,
     max_volume,
     max_velocity,
+    load_midi_from_file,
 )
 from style.scales import (
     interval2key,
@@ -601,21 +602,17 @@ def merge_channels_by_instrument(channels):
 
 
 def get_input(filename):
-    try:
-        mid = MidiFile(filename)
-    except (OSError, ValueError, KeyError, EOFError):
+    mid = load_midi_from_file(filename)
+    if mid is None:
         raise MidiFormatError('Error loading MIDI file')
-    channels, info = split_channels(mid)
-    channels = merge_channels_by_instrument(channels)
+    channels, info = read_midi(mid)
     channels_info = [get_channel_info(channel) for channel in channels]
 
     cc = ChannelConverter(info)
     nchannels = [cc.channel2nchannel(channel) for channel in channels]
 
-    keys_dist_per_instrument = [get_keys_dist(
-        info, nchannel) for nchannel in nchannels]
-    keys_dist = list2df(keys_dist_per_instrument).reindex(
-        columns=key_names).sum()
+    keys_dist_per_instrument = [get_keys_dist(info, nchannel) for nchannel in nchannels]
+    keys_dist = list2df(keys_dist_per_instrument).reindex(columns=key_names).sum()
     keys_dist = np.asarray(keys_dist)
     normalize_dist(keys_dist)
 

@@ -50,6 +50,13 @@ def is_pitched(instrument_id):
     return instrument_id >= 0 and not is_sound_effect(instrument_id)
 
 
+def load_midi_from_file(path):
+    try:
+        return MidiFile(path)
+    except (OSError, ValueError, KeyError, EOFError):
+        return None
+
+
 def play_midi(mid, portname=None):
     with mido.open_output(portname) as output:
         try:
