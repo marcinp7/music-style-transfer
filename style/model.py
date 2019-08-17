@@ -1,7 +1,9 @@
-import numpy as np
+# import numpy as np
 import torch
+from torch import nn
+import torch.nn.functional as F
 
-from py_utils.pytorch import total_size, remove_dims, tensor_view
+from py_utils.pytorch import total_size, remove_dims, tensor_view, Distributed, squash_dims, LSTM
 
 # from style.midi import get_input
 
@@ -12,136 +14,122 @@ def flatten_channel(x):
     return x
 
 
-class ChannelEncoder(torch.nn.Module):
-    def __init__(self, input_shape, local_bar_size=20, bar_size=60, num_layers=1):
+class ChannelEncoder(nn.Module):
+    def __init__(self, n_channels=100, beats_lstm_size=100, bars_lstm_size=100):
         super().__init__()
-        self.input_shape = input_shape
-        self.local_bar_size = local_bar_size
-        self.bar_size = bar_size
-        self.num_layers = num_layers
-
-        self.beats_lstm = torch.nn.LSTM(
-            input_size=self.input_size,
-            hidden_size=self.local_bar_size,
-            num_layers=self.num_layers,
+        self.beat_conv = nn.Conv1d(
+            in_channels=50,
+            out_channels=n_channels,
+            kernel_size=14,
+            stride=7,
+            padding=4,
         )
-
-        self.bars_lstm = torch.nn.LSTM(
-            input_size=self.local_bar_size,
-            hidden_size=self.local_bar_size,
-            num_layers=self.num_layers,
+        self.beat_conv = Distributed(self.beat_conv, depth=2)
+        self.beats_lstm = LSTM(
+            input_size=8*n_channels,
+            hidden_size=beats_lstm_size,
+            num_layers=1,
+            batch_first=True,
+        )
+        self.beats_lstm = Distributed(self.beats_lstm, depth=1)
+        self.bars_lstm = LSTM(
+            input_size=4*beats_lstm_size,
+            hidden_size=bars_lstm_size,
+            num_layers=1,
             bidirectional=True,
+            batch_first=True,
         )
 
-        self.fc = torch.nn.Linear(local_bar_size * 2, self.bar_size)
-
-    @property
-    def input_size(self):
-        return total_size(self.input_shape)
-
-    def bar2tensor(self, bar, device):
-        bar = [torch.tensor(beat, dtype=torch.float) for beat in bar]
-        bar = torch.stack(bar)
-        bar = bar.to(device)
-        return bar
-
-    def get_bar_vector(self, bar):
-        output, _ = self.beats_lstm(bar)
-        return output[-1]
-
-    def forward(self, input):
-        input = flatten_channel(input)
-        bar_vectors = [self.get_bar_vector(bar) for bar in input]
-        bar_vectors = torch.stack(bar_vectors)
-        bar_vectors, _ = self.bars_lstm(bar_vectors)
-        bar_vectors = [self.fc(bar_vector) for bar_vector in bar_vectors]
-        bar_vectors = torch.stack(bar_vectors)
-        return bar_vectors
-
-    def prepare_input(self, vchannel, device='cpu'):
-        bars = [self.bar2tensor(bar, device) for bar in vchannel]
-        bars = torch.stack(bars)
-        return bars
-
-    def encode_vchannel(self, vchannel, device):
-        x = self.prepare_input(vchannel, device)
-        return self.forward(x)
+    def forward(self, x):
+        # input format: (batch, bar, beat, beat_fraction, note_features, note)
+        x = squash_dims(x, 3, 5)  # combine beat fractions and note features
+        x = self.beat_conv(x)
+        x = F.relu(x)
+        x = squash_dims(x, -2)
+        x = self.beats_lstm(x)[0]
+        x = squash_dims(x.contiguous(), 2)
+        x = self.bars_lstm(x)[0]
+        return x
 
 
-class StyleEncoder(torch.nn.Module):
-    def __init__(self, bar_size, style_size=300, num_layers=1):
+class StyleEncoder(nn.Module):
+    def __init__(self, input_size=200, hidden_size=100):
         super().__init__()
-        self.bar_size = bar_size
-        self.style_size = style_size
-        self.num_layers = num_layers
-
-        self.lstm = torch.nn.LSTM(
-            input_size=self.bar_size,
-            hidden_size=self.style_size,
-            num_layers=self.num_layers,
+        self.lstm = LSTM(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=1,
+            batch_first=True,
         )
 
-    def forward(self, input):
-        output, _ = self.lstm(input)
-        return output[-1, 0]
+    def forward(self, x):
+        x = self.lstm(x)[0]
+        x = x[:, -1]
+        return x
 
 
-# todo: melody for pitched instruments
-class MelodyEncoder(torch.nn.Module):
-    def __init__(self, channel_encoder, output_shape, num_layers=2):
+class MelodyEncoder(nn.Module):
+    def __init__(self, channel_encoder=None):
         super().__init__()
         self.channel_encoder = channel_encoder
-        self.output_shape = output_shape
-        self.num_layers = num_layers
-
-        lstm_input_size = self.channel_encoder.bar_size + self.channel_encoder.input_size
-        self.lstm = torch.nn.LSTM(
-            input_size=lstm_input_size,
-            hidden_size=self.output_size,
-            num_layers=self.num_layers,
+        self.beat_conv = nn.Conv1d(
+            in_channels=50,
+            out_channels=7,
+            kernel_size=14,
+            stride=7,
+            padding=4,
         )
-
-    @property
-    def output_size(self):
-        return total_size(self.output_shape)
-
-    def get_bar_melody(self, bar):
-        output, _ = self.lstm(bar)
-        return output
+        self.beat_conv = Distributed(self.beat_conv, depth=2)
+        self.linear = nn.Linear(
+            in_features=200,
+            out_features=7,
+        )
 
     def forward(self, channel, encoded_channel=None):
-        channel = flatten_channel(channel)
+        channel = squash_dims(channel, 3, 5)  # combine beat fractions and note features
+        x1 = self.beat_conv(channel)
+
         if encoded_channel is None:
             encoded_channel = self.channel_encoder(channel)
-        n_beats = channel.shape[1]
-        expanded_channel = encoded_channel.unsqueeze(2).expand(-1, n_beats, -1, -1)
-        concat_channel = torch.cat([channel, expanded_channel], dim=3)
+        x2 = self.linear(encoded_channel)
+        x2 = x2.unsqueeze(-1).unsqueeze(2)
 
-        bars = [self.get_bar_melody(bar) for bar in concat_channel]
-        output = torch.stack(bars)
-        return tensor_view(output, *self.output_shape, keep_dims=2)
+        x = x1 + x2
+        x = squash_dims(x, -2)
+        x = torch.sigmoid(x)
+        # x = F.hardtanh(x, 0., 1.)
 
-    def encode_melody(self, vchannel, device):
-        channel = self.channel_encoder.prepare_input(vchannel, device)
-        return self.forward(channel)
+        x = x.unsqueeze(3)
+        x = channel * x
+
+        return x
 
 
-class StyleApplier(torch.nn.Module):
-    def __init__(self, melody_shape, style_size, output_shape, num_layers=1):
+class StyleApplier(nn.Module):
+    def __init__(self, n_channels, beats_lstm_size, bars_lstm_size):
         super().__init__()
-        self.style_size = style_size
-        self.melody_shape = melody_shape
-        self.num_layers = num_layers
-        self.output_shape = output_shape
-        self.num_layers = num_layers
-
-        self.lstm = torch.nn.LSTM(
-            input_size=self.style_size+self.melody_size,
-            hidden_size=self.output_size,
-            num_layers=self.num_layers,
+        self.beat_conv = nn.Conv1d(
+            in_channels=50,
+            out_channels=n_channels,
+            kernel_size=14,
+            stride=7,
+            padding=4,
         )
-
-        self.fc = torch.nn.Linear(self.output_size, self.output_size)
+        self.beat_conv = Distributed(self.beat_conv, depth=2)
+        self.beats_lstm = LSTM(
+            input_size=8*n_channels,
+            hidden_size=beats_lstm_size,
+            num_layers=1,
+            batch_first=True,
+        )
+        self.beats_lstm = Distributed(self.beats_lstm, depth=1)
+        self.bars_lstm = LSTM(
+            input_size=4*beats_lstm_size,
+            hidden_size=bars_lstm_size,
+            num_layers=1,
+            bidirectional=True,
+            batch_first=True,
+        )
 
     def duration_activation(self, x):
         return torch.relu(x)
@@ -149,14 +137,6 @@ class StyleApplier(torch.nn.Module):
     def velocity_activation(self, x):
         x = torch.relu(x)
         return torch.sigmoid(x)
-
-    @property
-    def melody_size(self):
-        return total_size(self.melody_shape)
-
-    @property
-    def output_size(self):
-        return total_size(self.output_shape)
 
     def apply_style(self, bar, style):
         n_beats = bar.shape[0]
@@ -167,6 +147,14 @@ class StyleApplier(torch.nn.Module):
         return output
 
     def forward(self, melody, style):
+        x = self.beat_conv(melody)
+        x = F.relu(x)
+        x = squash_dims(x, -2)
+        x = self.beats_lstm(x)[0]
+        x = squash_dims(x.contiguous(), 2)
+        x = self.bars_lstm(x)[0]
+
+
         melody = flatten_channel(melody)
         bars = [self.apply_style(bar, style) for bar in melody]
         output = torch.stack(bars)
@@ -183,7 +171,7 @@ class StyleApplier(torch.nn.Module):
         return output
 
 
-class StyleTransferModel(torch.nn.Module):
+class StyleTransferModel(nn.Module):
     def __init__(self, channel_encoder, melody_encoder, style_encoder, style_applier):
         super().__init__()
         self.channel_encoder = channel_encoder
@@ -194,9 +182,9 @@ class StyleTransferModel(torch.nn.Module):
     def prepare_input(self, vchannel, device='cpu'):
         return self.channel_encoder.prepare_input(vchannel, device)
 
-    def forward(self, input):
-        encoded = self.channel_encoder(input)
-        melody = self.melody_encoder(input, encoded)
+    def forward(self, x):
+        encoded = self.channel_encoder(x)
+        melody = self.melody_encoder(x, encoded)
         style = self.style_encoder(encoded)
         applied = self.style_applier(melody, style)
         return applied
