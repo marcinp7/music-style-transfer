@@ -173,10 +173,10 @@ class StyleApplier(nn.Module):
         x = squash_dims(x, -2)
         # print(x.shape)
 
-        x[:, :, :, :, 0, :] = self.duration_activation(x[:, :, :, :, 0, :])
-        x[:, :, :, :, 1, :] = self.velocity_activation(x[:, :, :, :, 1, :])
-        x[:, :, :, :, 2:, :] = self.accidental_activation(x[:, :, :, :, 2:, :])
-
+        duration = self.duration_activation(x[:, :, :, :, :1])
+        velocity = self.velocity_activation(x[:, :, :, :, 1:2])
+        accidentals = self.accidentals_activation(x[:, :, :, :, 2:])
+        x = torch.cat([duration, velocity, accidentals], 4)
         return x
 
 
