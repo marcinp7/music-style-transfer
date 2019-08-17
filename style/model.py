@@ -1,17 +1,12 @@
 # import numpy as np
+
 import torch
 from torch import nn
 import torch.nn.functional as F
 
-from py_utils.pytorch import remove_dims, tensor_view, Distributed, squash_dims, LSTM
+from py_utils.pytorch import Distributed, squash_dims, LSTM
 
 # from style.midi import get_input
-
-
-def flatten_channel(x):
-    x = remove_dims(x, 2)
-    x = x.unsqueeze(2)
-    return x
 
 
 class ChannelEncoder(nn.Module):
