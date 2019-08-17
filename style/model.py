@@ -144,7 +144,7 @@ class StyleApplier(nn.Module):
         return x
 
     @classmethod
-    def accidental_activation(cls, x):
+    def accidentals_activation(cls, x):
         x = torch.sigmoid(x)
         return x
 
@@ -196,24 +196,40 @@ class StyleTransferModel(nn.Module):
         return x
 
 
-def get_duration(y):
-    return y[:, :, :, :, 0]
+def get_duration(x):
+    return x[:, :, :, :, 0]
 
 
-def get_velocity(y):
-    return y[:, :, :, :, 1]
+def get_velocity(x):
+    return x[:, :, :, :, 1]
 
 
-def duration_loss_func(y, pred):
-    return torch.log((1 + y) / (1 + pred)) ** 2
+def get_accidentals(x):
+    return x[:, :, :, :, 2:]
 
 
-def velocity_loss_func(y, pred):
-    return (y - pred) ** 2
+def get_duration_loss(input, target):
+    x = torch.log((1 + target) / (1 + input)) ** 2
+    return x.mean()
 
 
-def loss_func(y, pred):
-    duration_loss = duration_loss_func(get_duration(y), get_duration(pred))
-    velocity_loss = velocity_loss_func(get_velocity(y), get_velocity(pred))
-    total_loss = duration_loss + velocity_loss
-    return total_loss.mean()
+def get_velocity_loss(input, target):
+    x = (target - input) ** 2
+    return x.mean()
+
+
+epsilon = 1e-6
+
+
+def get_accidentals_loss(input, target):
+    x = target * torch.log(input + epsilon) + (1. - target) * torch.log(1. - input + epsilon)
+    return -x.mean()
+
+
+def get_loss(input, target):
+    duration_loss = get_duration_loss(get_duration(target), get_duration(input))
+    velocity_loss = get_velocity_loss(get_velocity(target), get_velocity(input))
+    accidentals_loss = get_accidentals_loss(get_accidentals(target), get_accidentals(input))
+    print(duration_loss, velocity_loss, accidentals_loss)
+    total_loss = duration_loss + velocity_loss + accidentals_loss
+    return total_loss
