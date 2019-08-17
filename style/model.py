@@ -193,15 +193,12 @@ class StyleTransferModel(nn.Module):
         self.style_encoder = style_encoder
         self.style_applier = style_applier
 
-    def prepare_input(self, vchannel, device='cpu'):
-        return self.channel_encoder.prepare_input(vchannel, device)
-
     def forward(self, x):
-        encoded = self.channel_encoder(x)
-        melody = self.melody_encoder(x, encoded)
-        style = self.style_encoder(encoded)
-        applied = self.style_applier(melody, style)
-        return applied
+        beats, bars = self.channel_encoder(x)
+        melody = self.melody_encoder(x, beats, bars)
+        style = self.style_encoder(bars)
+        x = self.style_applier(melody, style)
+        return x
 
 
 def get_duration(y):
