@@ -24,13 +24,14 @@ class ChannelEncoder(nn.Module):
         )
         self.beats_lstm = Distributed(self.beats_lstm, depth=1)
         self.bars_lstm = LSTM(
-            input_size=4*beat_size,
+            input_size=beat_size,
             hidden_size=bar_size,
             num_layers=1,
             bidirectional=True,
             batch_first=True,
         )
 
+    # todo: improve encoding beats
     def forward(self, x):
         # input format: (batch, bar, beat, beat_fraction, note_features, note)
         if len(x.shape) == 6:
@@ -39,7 +40,7 @@ class ChannelEncoder(nn.Module):
         x = torch.relu(x)
         x = squash_dims(x, -2)
         beats = self.beats_lstm(x)[0]
-        x = squash_dims(beats.contiguous(), 2)
+        x = beats[:, :, -1]
         bars = self.bars_lstm(x)[0]
         return beats, bars
 

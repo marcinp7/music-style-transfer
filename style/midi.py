@@ -4,7 +4,7 @@ import os
 import re
 
 import mido
-from mido import Message, MetaMessage, MidiFile, MidiTrack
+from mido import Message, MetaMessage, MidiFile, MidiTrack, KeySignatureError
 
 
 here = os.path.dirname(__file__)
@@ -53,7 +53,7 @@ def is_pitched(instrument_id):
 def load_midi_from_file(path):
     try:
         return MidiFile(path)
-    except (OSError, ValueError, KeyError, EOFError):
+    except (OSError, ValueError, KeyError, EOFError, KeySignatureError):
         return None
 
 
