@@ -1,12 +1,8 @@
-# import numpy as np
-
 import torch
 from torch import nn
-import torch.nn.functional as F
+# import torch.nn.functional as F
 
 from py_utils.pytorch import Distributed, squash_dims, LSTM
-
-# from style.midi import get_input
 
 
 class ChannelEncoder(nn.Module):
@@ -40,7 +36,7 @@ class ChannelEncoder(nn.Module):
         if len(x.shape) == 6:
             x = squash_dims(x, 3, 5)  # combine beat fractions and note features
         x = self.beat_conv(x)
-        x = F.relu(x)
+        x = torch.relu(x)
         x = squash_dims(x, -2)
         beats = self.beats_lstm(x)[0]
         x = squash_dims(beats.contiguous(), 2)
@@ -152,26 +148,21 @@ class StyleApplier(nn.Module):
         beats, bars = self.channel_encoder(melody)
 
         x1 = self.beats_linear(beats)
-        # print(x1.shape)
 
         x2 = self.bars_linear(bars)
         x2 = x2.unsqueeze(2)
-        # print(x2.shape)
 
         x3 = self.style_linear(style)
         x3 = x3.unsqueeze(1).unsqueeze(1)
-        # print(x3.shape)
 
         x4 = self.beats_conv(melody)
         x4 = x4.view(*x4.shape[:3], 10, 5, 7, 8)
         x4 = x4.transpose(-1, -2) # octave must come before scale degree
-        # print(x4.shape)
 
         x = x1 + x2 + x3
         x = x.view(*x.shape[:3], 10, 5, 8, 7)
         x += x4
         x = squash_dims(x, -2)
-        # print(x.shape)
 
         duration = self.duration_activation(x[:, :, :, :, :1])
         velocity = self.velocity_activation(x[:, :, :, :, 1:2])
@@ -230,6 +221,5 @@ def get_loss(input, target):
     duration_loss = get_duration_loss(get_duration(target), get_duration(input))
     velocity_loss = get_velocity_loss(get_velocity(target), get_velocity(input))
     accidentals_loss = get_accidentals_loss(get_accidentals(target), get_accidentals(input))
-    print(duration_loss, velocity_loss, accidentals_loss)
     total_loss = duration_loss + velocity_loss + accidentals_loss
     return total_loss
