@@ -284,7 +284,10 @@ def scale_loc2key_octave(octave, degree, mode, tonic, accidental=None):
         interval += 1
     elif accidental == 'flat':
         interval -= 1
-    if interval >= 12:
+    if interval < 0:
+        octave -= 1
+        interval += 12
+    elif interval >= 12:
         octave += 1
         interval -= 12
     key = interval2key[interval]
