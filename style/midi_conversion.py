@@ -512,7 +512,8 @@ class ChannelConverter:
 
             bar = bars[note.bar]
             bar[note.beat] = np.maximum(bar[note.beat], partial_beat)
-        return bars
+        vchannel = np.stack(bars)
+        return vchannel
 
     def vchannel2qchannel(self, channel_info, vchannel):
         pitched = is_pitched(channel_info['instrument_id'])
