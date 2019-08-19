@@ -196,7 +196,7 @@ def get_midi_info(global_messages, channels, ticks_per_beat):
 
 
 def group_channel_messages(channel_messages, channel_id):
-    instrument_id = 0
+    instrument_id = get_instrument_id(0, channel_id)
     instrument_id2messages = defaultdict(list)
     volume = default_volume
 
