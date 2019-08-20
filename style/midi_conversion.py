@@ -264,7 +264,7 @@ def note2scale_loc(key, octave, mode, tonic):
         relative_degree = get_relative_degree(interval, mode, major_mode)
         accidental = degree2accidental[relative_degree]
         if accidental == 'sharp':
-            degree = math.floot(degree)
+            degree = math.floor(degree)
         elif accidental == 'flat':
             degree = math.ceil(degree)
         else:
