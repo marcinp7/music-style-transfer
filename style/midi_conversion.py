@@ -257,17 +257,22 @@ degree2accidental = {
 }
 
 
-def note2scale_loc(note, mode, tonic):
+def note2scale_loc(key, octave, mode, tonic):
     tonic_interval = key2interval[tonic]
-    interval = key2interval[note.key] - tonic_interval
+    interval = key2interval[key] - tonic_interval
     degree = mode.get_degree(interval)
     if isinstance(degree, int):
         accidental = 'none'
     else:
         relative_degree = get_relative_degree(interval, mode, major_mode)
         accidental = degree2accidental[relative_degree]
-        degree = int(degree)
-    octave = note.octave
+        if accidental == 'sharp':
+            degree = math.floot(degree)
+        elif accidental == 'flat':
+            degree = math.ceil(degree)
+        else:
+            raise Exception("Accidental should be 'sharp' or 'flat'")
+    octave = octave
     if interval < 0:
         octave -= 1
     return dict(
@@ -411,7 +416,7 @@ class ChannelConverter:
         pitched = is_pitched(nchannel['instrument_id'])
         for note in kchannel['notes']:
             if pitched:
-                scale_loc = note2scale_loc(note, self.mode, self.key)
+                scale_loc = note2scale_loc(note.key, note.octave, self.mode, self.key)
             else:
                 scale_loc = dict(
                     octave=None,
