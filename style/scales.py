@@ -111,16 +111,6 @@ major_mode = Mode([2, 2, 1, 2, 2, 2, 1])
 minor_mode = create_mode(major_mode, shift=-2)
 all_modes = [create_mode(major_mode, shift) for shift in range(len(Mode.names))]
 
-
-def get_keys_dist(info, nchannel):
-    key2time = group_by(nchannel['notes'], attr='key', func=lambda xs: sum(
-        x.duration * x.velocity for x in xs))
-    key2time = {key: mido.tick2second(
-        time, info['ticks_per_beat'], info['tempo']) for key, time in key2time.items()}
-    key2time['instrument'] = nchannel['instrument_name']
-    return key2time
-
-
 major_dist = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
 major_dist = normalize_dist(major_dist)
 
@@ -128,6 +118,9 @@ minor_dist = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.6
 minor_dist = normalize_dist(minor_dist)
 
 target_mode_dist = (major_dist + minor_dist) / 2
+
+major_intervals = major_mode.absolute_intervals
+minor_intervals = minor_mode.absolute_intervals
 
 # notes typically used in major in minor scales
 typical_major_intervals = [0, 2, 4, 5, 6, 7, 9, 10, 11]
@@ -172,16 +165,30 @@ def get_scales(key2time=None, keys_dist=None):
         keys_dist = np.array([key2time.get(key, 0) for key in key_names])
         keys_dist = normalize_dist(keys_dist)
 
+    major_key_scores = get_key_scores(
+        keys_dist,
+        major_dist,
+        major_intervals,
+        typical_major_intervals,
+    )
+    minor_key_scores = get_key_scores(
+        keys_dist,
+        minor_dist,
+        minor_intervals,
+        typical_minor_intervals,
+    )
+
     data = []
-    for key_score in get_key_scores(keys_dist, major_dist, typical_major_intervals):
+    for key_score in major_key_scores:
         key_score['mode'] = 'major'
         data.append(key_score)
-    for key_score in get_key_scores(keys_dist, minor_dist, typical_minor_intervals):
+    for key_score in minor_key_scores:
         key_score['mode'] = 'minor'
         data.append(key_score)
 
     for d in data:
-        d['loss'] = d['cross_entropy'] * (1 - d['ndcg'])
+        # d['loss'] = d['cross_entropy'] * (1 - d['ndcg'])
+        d['loss'] = d['cross_entropy'] * (1.5 - d['coverage']) * (2 - d['loose_coverage'])
 
     return data
 
@@ -190,7 +197,7 @@ def shift_intervals(intervals, shift):
     return (np.asarray(intervals) + shift) % 12
 
 
-def get_key_scores(keys_dist, scale_dist, typical_intervals):
+def get_key_scores(keys_dist, scale_dist, main_intervals, typical_intervals):
     for key in key_names:
         most_common = sorted(enumerate(-keys_dist), key=lambda x: x[1])
         most_common = [x[0] for x in most_common]
@@ -199,7 +206,8 @@ def get_key_scores(keys_dist, scale_dist, typical_intervals):
         from py_utils import metrics
         yield dict(
             key=key,
-            coverage=keys_dist[typical_intervals].sum(),
+            coverage=keys_dist[main_intervals].sum(),
+            loose_coverage=keys_dist[typical_intervals].sum(),
             cross_entropy=cross_entropy(keys_dist, scale_dist),
             ndcg=metrics.ndcg(scale_dist, most_common),
         )

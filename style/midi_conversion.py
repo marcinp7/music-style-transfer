@@ -5,9 +5,7 @@ from fractions import Fraction
 import math
 
 import numpy as np
-
 import mido
-from mido import MidiFile
 
 from py_utils import group_by, flatten
 from py_utils.data import list2df
@@ -26,7 +24,6 @@ from style.midi import (
 from style.scales import (
     interval2key,
     key2interval,
-    get_keys_dist,
     key_names,
     get_scale,
     get_relative_degree,
@@ -350,6 +347,15 @@ def get_notes_dist(info, nchannel):
                  for key, time in note2time.items()}
     note2time['instrument'] = nchannel['instrument_name']
     return note2time
+
+
+def get_keys_dist(info, nchannel):
+    key2time = group_by(nchannel['notes'], attr='key', func=lambda xs: sum(
+        x.duration * x.velocity for x in xs))
+    key2time = {key: mido.tick2second(
+        time, info['ticks_per_beat'], info['tempo']) for key, time in key2time.items()}
+    key2time['instrument'] = nchannel['instrument_name']
+    return key2time
 
 
 class ChannelConverter:
