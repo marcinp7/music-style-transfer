@@ -1,10 +1,7 @@
 import numpy as np
 
-import mido
-
-from py_utils.math import normalize_dist
-from py_utils.metrics import cross_entropy
-from py_utils import group_by
+from style.utils.math import normalize_dist
+from style.utils.metrics import cross_entropy
 
 key_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 interval2key = dict(enumerate(key_names))

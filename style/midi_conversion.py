@@ -7,9 +7,8 @@ import math
 import numpy as np
 import mido
 
-from py_utils import group_by, flatten
-from py_utils.data import list2df
-from py_utils.math import round_number, normalize_dist
+from style.utils import group_by, flatten
+from style.utils.math import round_number
 
 from style.midi import (
     get_instrument_id,
@@ -19,13 +18,10 @@ from style.midi import (
     default_volume,
     max_volume,
     max_velocity,
-    load_midi_from_file,
 )
 from style.scales import (
     interval2key,
     key2interval,
-    key_names,
-    get_scale,
     get_relative_degree,
     major_mode,
 )
