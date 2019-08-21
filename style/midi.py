@@ -111,6 +111,6 @@ def create_midi(info, *instruments, max_delta_time=math.inf):
         msg = copy(msg)
         delta_time = min(msg.time - time, max_delta_time)
         time = msg.time
-        msg.time = delta_time
+        msg.time = max(0, delta_time)
         track.append(msg)
     return mid

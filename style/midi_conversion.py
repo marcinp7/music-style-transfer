@@ -547,7 +547,7 @@ class ChannelConverter:
                             elif sharp:
                                 accidental = 'sharp'
                             else:
-                                assert False
+                                accidental = 'none'
                             degree = note_idx % 7 + 1
                             note_idx -= degree - 1
                             octave = note_idx // 7
