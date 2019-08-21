@@ -614,36 +614,3 @@ def merge_channels_by_instrument(channels):
         channels, 'instrument_name', func=merge_channels)
     channels_grouped = list(channels_grouped.values())
     return channels_grouped
-
-
-def get_input(filename):
-    mid = load_midi_from_file(filename)
-    if mid is None:
-        raise MidiFormatError('Error loading MIDI file')
-    channels, info = read_midi(mid)
-    channels_info = [get_channel_info(channel) for channel in channels]
-
-    cc = ChannelConverter(info)
-    nchannels = [cc.channel2nchannel(channel) for channel in channels]
-
-    keys_dist_per_instrument = [get_keys_dist(info, nchannel) for nchannel in nchannels]
-    keys_dist = list2df(keys_dist_per_instrument).reindex(columns=key_names).sum()
-    keys_dist = np.asarray(keys_dist)
-    normalize_dist(keys_dist)
-
-    scale = get_scale(keys_dist=keys_dist)
-    info['scale'] = scale
-
-    kchannels = [cc.nchannel2kchannel(nchannel) for nchannel in nchannels]
-    qchannels = [cc.kchannel2qchannel(kchannel) for kchannel in kchannels]
-    vchannels = [cc.qchannel2vchannel(qchannel) for qchannel in qchannels]
-
-    return info, channels_info, vchannels
-
-
-def get_inputs(files, shuffle=False):
-    if shuffle:
-        files = files[:]
-        np.random.shuffle(files)
-    for file in files:
-        yield get_input(file)
