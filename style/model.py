@@ -137,6 +137,7 @@ class StyleApplier(nn.Module):
 
     @classmethod
     def velocity_activation(cls, x):
+        x = torch.tanh(x)
         x = torch.relu(x)
         return x
 
@@ -186,6 +187,13 @@ class StyleTransferModel(nn.Module):
         style = self.style_encoder(bars)
         x = self.style_applier(melody, style)
         return x
+
+
+def hard_output(x):
+    accidentals = x[:, :, :, :, 2:]
+    accidentals = accidentals > .5
+    x = torch.cat([x[:, :, :, :, :2], accidentals.float()], 4)
+    return x
 
 
 def get_duration(x):
