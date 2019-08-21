@@ -1,8 +1,7 @@
 import torch
 from torch import nn
-# import torch.nn.functional as F
 
-from py_utils.pytorch import Distributed, squash_dims, LSTM
+from style.utils.pytorch import Distributed, squash_dims, LSTM
 
 
 class ChannelEncoder(nn.Module):
@@ -227,8 +226,9 @@ def get_accidentals_loss(input, target):
 
 
 def get_loss(input, target):
-    duration_loss = get_duration_loss(get_duration(target), get_duration(input))
-    velocity_loss = get_velocity_loss(get_velocity(target), get_velocity(input))
-    accidentals_loss = get_accidentals_loss(get_accidentals(target), get_accidentals(input))
-    total_loss = duration_loss + velocity_loss + accidentals_loss
+    duration_loss = get_duration_loss(get_duration(input), get_duration(target))
+    velocity_loss = get_velocity_loss(get_velocity(input), get_velocity(target))
+    accidentals_loss = get_accidentals_loss(get_accidentals(input), get_accidentals(target))
+    # print(f'{duration_loss:.2f}, {accidentals_loss:.2f}, {velocity_loss:.2f}')
+    total_loss = .1 * duration_loss + .1 * accidentals_loss + .8 * velocity_loss
     return total_loss
