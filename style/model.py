@@ -214,13 +214,25 @@ def get_accidentals(x):
 
 
 def get_duration_loss(input, target):
-    x = torch.log((1 + target) / (1 + input)) ** 2
+    x = torch.log((1. + input) / (1. + target)) ** 2
     return x.mean()
 
 
 def get_velocity_loss(input, target):
-    x = (target - input) ** 2
-    return x.mean()
+    error = (target - input) ** 2
+
+    positives = (target > 0).float()
+    negatives = (target == 0).float()
+
+    false_positives = error * negatives
+    false_negatives = error * positives
+
+    false_positives_error = false_positives.sum() / (1. + negatives.sum())
+    false_negatives_error = false_negatives.sum() / (1. + positives.sum())
+
+    total_loss = .5 * false_positives_error + .5 * false_negatives_error
+
+    return total_loss
 
 
 epsilon = 1e-6
@@ -235,6 +247,5 @@ def get_loss(input, target):
     duration_loss = get_duration_loss(get_duration(input), get_duration(target))
     velocity_loss = get_velocity_loss(get_velocity(input), get_velocity(target))
     accidentals_loss = get_accidentals_loss(get_accidentals(input), get_accidentals(target))
-    # print(f'{duration_loss:.2f}, {accidentals_loss:.2f}, {velocity_loss:.2f}')
     total_loss = .1 * duration_loss + .1 * accidentals_loss + .8 * velocity_loss
     return total_loss
