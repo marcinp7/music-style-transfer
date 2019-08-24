@@ -84,6 +84,7 @@ class MelodyEncoder(nn.Module):
     def forward(self, channel, beats, bars):
         if len(channel.shape) == 6:
             channel = squash_dims(channel, 3, 5)  # (batch, bar, beat, features, note)
+
         x1 = self.beat_conv(channel)  # (batch, bar, beat, scale_degree, octave)
 
         x2 = self.beats_linear(beats)  # (batch, bar, beat, scale_degree)
@@ -218,21 +219,42 @@ def get_duration_loss(input, target):
     return x.mean()
 
 
-def get_velocity_loss(input, target):
+def get_smooth_f1_score(target, error, return_precision_recall=False):
+    positive = target
+    negative = 1. - positive
+
+    false_positive = error * negative
+    false_negative = error * positive
+
+    true_positive = (1. - error) * positive
+    # true_negative = (1. - error) * negative
+
+    TP = true_positive.sum()
+    FP = false_positive.sum()
+    FN = false_negative.sum()
+
+    precision = TP / (TP + FP)
+    recall = TP / (TP + FN)
+
+    f1_score = 2 * precision * recall / (precision + recall)
+
+    if return_precision_recall:
+        return f1_score, precision, recall
+    return f1_score
+
+
+def get_velocity_loss(input, target, verbose=False):
     error = (target - input) ** 2
 
-    positives = (target > 0).float()
-    negatives = (target == 0).float()
+    f1_score, precision, recall = get_smooth_f1_score(target, error, return_precision_recall=True)
 
-    false_positives = error * negatives
-    false_negatives = error * positives
+    if verbose:
+        print(
+            f'precision={precision:.2f} '
+            f'recall={recall:.2f}'
+        )
 
-    false_positives_error = false_positives.sum() / (1. + negatives.sum())
-    false_negatives_error = false_negatives.sum() / (1. + positives.sum())
-
-    total_loss = .5 * false_positives_error + .5 * false_negatives_error
-
-    return total_loss
+    return 1. - f1_score
 
 
 epsilon = 1e-6
