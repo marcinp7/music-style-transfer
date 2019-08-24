@@ -8,7 +8,7 @@ class ChannelEncoder(nn.Module):
     def __init__(self, n_channels=50, beat_size=16, bar_size=32):
         super().__init__()
         self.beat_conv = nn.Conv1d(
-            in_channels=50,
+            in_channels=10*5,
             out_channels=n_channels,
             kernel_size=14,
             stride=7,
@@ -65,7 +65,7 @@ class MelodyEncoder(nn.Module):
     def __init__(self):
         super().__init__()
         self.beat_conv = nn.Conv1d(
-            in_channels=50,
+            in_channels=5*10,
             out_channels=7,
             kernel_size=14,
             stride=7,
@@ -197,8 +197,10 @@ class StyleTransferModel(nn.Module):
 
 def hard_output(x):
     accidentals = x[:, :, :, :, 2:]
-    accidentals = accidentals > .5
-    x = torch.cat([x[:, :, :, :, :2], accidentals.float()], 4)
+    max_accidentals = accidentals.max(dim=-1)[0]
+    new_accidentals = accidentals == max_accidentals.unsqueeze(-1)
+    new_accidentals *= accidentals > .1
+    x = torch.cat([x[:, :, :, :, :2], new_accidentals.float()], 4)
     return x
 
 
@@ -219,7 +221,7 @@ def get_duration_loss(input, target):
     return x.mean()
 
 
-def get_smooth_f1_score(target, error, return_precision_recall=False):
+def get_smooth_f1_score(target, error):
     positive = target
     negative = 1. - positive
 
@@ -238,36 +240,40 @@ def get_smooth_f1_score(target, error, return_precision_recall=False):
 
     f1_score = 2 * precision * recall / (precision + recall)
 
-    if return_precision_recall:
-        return f1_score, precision, recall
-    return f1_score
+    return f1_score, precision, recall
 
 
 def get_velocity_loss(input, target, verbose=False):
     error = (target - input) ** 2
 
-    f1_score, precision, recall = get_smooth_f1_score(target, error, return_precision_recall=True)
+    f1_score, precision, recall = get_smooth_f1_score(target, error)
 
     if verbose:
         print(
-            f'precision={precision:.2f} '
-            f'recall={recall:.2f}'
+            f'velocity precision={precision:.2f} '
+            f'velocity recall={recall:.2f}'
         )
 
     return 1. - f1_score
 
 
-epsilon = 1e-6
-
-
 def get_accidentals_loss(input, target):
-    x = target * torch.log(input + epsilon) + (1. - target) * torch.log(1. - input + epsilon)
-    return -x.mean()
+    error = nn.functional.binary_cross_entropy(input, target)
+    return error.mean()
 
 
-def get_loss(input, target):
+def get_loss(input, target, verbose=False):
     duration_loss = get_duration_loss(get_duration(input), get_duration(target))
-    velocity_loss = get_velocity_loss(get_velocity(input), get_velocity(target))
-    accidentals_loss = get_accidentals_loss(get_accidentals(input), get_accidentals(target))
-    total_loss = .1 * duration_loss + .1 * accidentals_loss + .8 * velocity_loss
+    velocity_loss = get_velocity_loss(get_velocity(input), get_velocity(target), verbose)
+    accidentals_loss = get_accidentals_loss(
+        get_accidentals(input),
+        get_accidentals(target),
+        verbose,
+    )
+    total_loss = .1 * duration_loss + .2 * accidentals_loss + .7 * velocity_loss
+    if verbose:
+        print(
+            f'duration loss={duration_loss:.2f} accidentals loss={accidentals_loss:.2f} '
+            f'velocity loss={velocity_loss:.2f}'
+        )
     return total_loss
