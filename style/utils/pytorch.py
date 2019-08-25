@@ -1,6 +1,5 @@
+import numpy as np
 from torch import nn
-
-from style.utils.iter import prod
 
 
 def squash_dims(tensor, dim_begin, dim_end=None):
@@ -33,7 +32,7 @@ class Distributed(nn.Module):
         shape = x.shape
         n = self.depth + 1
         shape_head, shape_tail = shape[:n], shape[n:]
-        x = x.view(prod(shape_head), *shape_tail)
+        x = x.view(np.prod(shape_head), *shape_tail)
         x = self.module(x)
         x = self.view_tuple(x, *shape_head)
         return x
