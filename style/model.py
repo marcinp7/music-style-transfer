@@ -164,11 +164,16 @@ class StyleTransferModel(nn.Module):
 
 
 def hard_output(x):
+    duration = x[:, :, :, :, :1]
+    velocity = x[:, :, :, :, 1:2]
     accidentals = x[:, :, :, :, 2:]
+
+    velocity *= (velocity > .05).float()
+
     max_accidentals = accidentals.max(dim=-1)[0]
     new_accidentals = accidentals == max_accidentals.unsqueeze(-1)
     new_accidentals *= accidentals > .1
-    x = torch.cat([x[:, :, :, :, :2], new_accidentals.float()], 4)
+    x = torch.cat([duration, velocity, new_accidentals.float()], 4)
     return x
 
 
