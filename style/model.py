@@ -189,9 +189,10 @@ def get_accidentals(x):
     return x[:, :, :, :, 2:]
 
 
-def get_duration_loss(input, target):
-    x = torch.log((1. + input) / (1. + target)) ** 2
-    return x.mean()
+def get_duration_loss(input, target, mask):
+    x = (torch.log((1. + input) / (1. + target)) * mask) ** 2
+    x = x.sum() / mask.sum()
+    return x
 
 
 def get_smooth_f1_score(target, error):
@@ -218,7 +219,6 @@ def get_smooth_f1_score(target, error):
 
 def get_velocity_loss(input, target, verbose=False):
     error = (target - input) ** 2
-
     f1_score, precision, recall = get_smooth_f1_score(target, error)
 
     if verbose:
@@ -230,23 +230,21 @@ def get_velocity_loss(input, target, verbose=False):
     return 1. - f1_score
 
 
-def get_accidentals_loss(input, target):
+def get_accidentals_loss(input, target, mask, verbose=False):
     error = nn.functional.binary_cross_entropy(input, target)
     return error.mean()
 
 
-def get_loss(input, target, verbose=False):
-    duration_loss = get_duration_loss(get_duration(input), get_duration(target))
-    velocity_loss = get_velocity_loss(get_velocity(input), get_velocity(target), verbose)
+def get_losses(input, target, verbose=False):
+    taget_velocity = get_velocity(target)
+    mask = (taget_velocity > 0).float()
+
+    velocity_loss = get_velocity_loss(get_velocity(input), taget_velocity, verbose)
+    duration_loss = get_duration_loss(get_duration(input), get_duration(target), mask)
     accidentals_loss = get_accidentals_loss(
         get_accidentals(input),
         get_accidentals(target),
+        mask,
         verbose,
     )
-    total_loss = .1 * duration_loss + .2 * accidentals_loss + .7 * velocity_loss
-    if verbose:
-        print(
-            f'duration loss={duration_loss:.2f} accidentals loss={accidentals_loss:.2f} '
-            f'velocity loss={velocity_loss:.2f}'
-        )
-    return total_loss
+    return velocity_loss, accidentals_loss, duration_loss
