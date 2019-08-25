@@ -190,7 +190,8 @@ def get_accidentals(x):
 
 
 def get_duration_loss(input, target, mask):
-    x = (torch.log((1. + input) / (1. + target)) * mask) ** 2
+    # x = (torch.log((1. + input) / (1. + target)) * mask) ** 2
+    x = (torch.sigmoid(input) - torch.sigmoid(target)) ** 2
     x = x.sum() / mask.sum()
     return x
 
@@ -217,34 +218,34 @@ def get_smooth_f1_score(target, error):
     return f1_score, precision, recall
 
 
-def get_velocity_loss(input, target, verbose=False):
+def get_notes_loss(input, target):
     error = (target - input) ** 2
-    f1_score, precision, recall = get_smooth_f1_score(target, error)
-
-    if verbose:
-        print(
-            f'velocity precision={precision:.2f} '
-            f'velocity recall={recall:.2f}'
-        )
-
+    f1_score = get_smooth_f1_score(target, error)[0]
     return 1. - f1_score
 
 
-def get_accidentals_loss(input, target, mask, verbose=False):
-    error = nn.functional.binary_cross_entropy(input, target)
-    return error.mean()
+def get_velocity_loss(input, target, mask):
+    x = (target - input) ** 2
+    x *= mask
+    return x.sum() / mask.sum()
 
 
-def get_losses(input, target, verbose=False):
-    taget_velocity = get_velocity(target)
-    mask = (taget_velocity > 0).float()
+def get_accidentals_loss(input, target, mask):
+    # x = nn.functional.binary_cross_entropy(input, target, reduction='none')
+    x = (input - target) ** 2
+    x *= mask.unsqueeze(-2)
+    x = x.sum() / (mask.sum() * 3)
+    return x
 
-    velocity_loss = get_velocity_loss(get_velocity(input), taget_velocity, verbose)
+
+def get_losses(input, target):
+    target_velocity = get_velocity(target)
+    mask = (target_velocity > 0.).float()
+
+    velocity = get_velocity(input)
+    notes_loss = get_notes_loss(velocity, target_velocity)
+    velocity_loss = get_velocity_loss(velocity, target_velocity, mask)
+
     duration_loss = get_duration_loss(get_duration(input), get_duration(target), mask)
-    accidentals_loss = get_accidentals_loss(
-        get_accidentals(input),
-        get_accidentals(target),
-        mask,
-        verbose,
-    )
-    return velocity_loss, accidentals_loss, duration_loss
+    accidentals_loss = get_accidentals_loss(get_accidentals(input), get_accidentals(target), mask)
+    return notes_loss, velocity_loss, accidentals_loss, duration_loss
