@@ -108,28 +108,11 @@ class MelodyEncoder(nn.Module):
 class StyleApplier(nn.Module):
     def __init__(self):
         super().__init__()
-        self.channel_encoder = ChannelEncoder(n_channels=10, beat_size=4, bar_size=8)
         out_features = 10 * 5 * 8 * 7
-        self.beats_linear = nn.Linear(
-            in_features=4,
-            out_features=out_features,
-        )
-        self.bars_linear = nn.Linear(
-            in_features=16,
-            out_features=out_features,
-        )
         self.style_linear = nn.Linear(
             in_features=100,
             out_features=out_features,
         )
-        self.beats_conv = nn.Conv1d(
-            in_channels=50,
-            out_channels=7*50,
-            kernel_size=14,
-            stride=7,
-            padding=4,
-        )
-        self.beats_conv = Distributed(self.beats_conv, depth=2)
 
     @classmethod
     def duration_activation(cls, x):
@@ -148,29 +131,14 @@ class StyleApplier(nn.Module):
         return x
 
     def forward(self, melody, style):
-        beats, bars = self.channel_encoder(melody)
+        x1 = melody
+        x1 = x1.view(*x1.shape[:3], 10, 5, -1)
 
-        x1 = self.beats_linear(beats) # (batch, bar, beat, features)
-
-        x2 = self.bars_linear(bars) # (batch, bar, features)
-        x2 = x2.unsqueeze(2) # (batch, bar, beat, features)
-
-        x3 = self.style_linear(style) # (batch, features)
-        x3 = x3.unsqueeze(1).unsqueeze(1) # (batch, bar, beat, features)
-
-        x4 = self.beats_conv(melody) # (batch, bar, beat, features, octave)
-        # (batch, bar, beat, note_fraction, note_features, scale_degree, octave)
-        x4 = x4.view(*x4.shape[:3], 10, 5, 7, 8)
-        # octave must come before scale degree
-        x4 = x4.transpose(-1, -2)
-        # (batch, bar, beat, note_fraction, note_features, octave, scale_degree)
-        x4 = squash_dims(x4.contiguous(), -2)
+        x2 = self.style_linear(style) # (batch, features)
+        x2 = x2.view(x1.size(0), 1, 1, 10, 5, -1)
         # (batch, bar, beat, note_fraction, note_features, note)
 
-        x = x1 + x2 + x3
-        x = x.view(*x.shape[:3], 10, 5, -1) # (batch, bar, beat, beat_fraction, note_features, note)
-        x += x4
-
+        x = x1 + x2
         duration = self.duration_activation(x[:, :, :, :, :1])
         velocity = self.velocity_activation(x[:, :, :, :, 1:2])
         accidentals = self.accidentals_activation(x[:, :, :, :, 2:])
