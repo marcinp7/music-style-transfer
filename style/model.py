@@ -32,9 +32,10 @@ class ChannelEncoder(nn.Module):
 
     # todo: improve encoding beats
     def forward(self, x):
-        # (batch, bar, beat, beat_fraction, note_features, note)
-        if len(x.shape) == 6:
-            x = squash_dims(x, 3, 5)  # (batch, bar, beat, features, note)
+        # (batch, bar, beat, beat_fraction, note, note_features)
+        x = x.transpose(-1, -2) # (batch, bar, beat, beat_fraction, note_features, note)
+        x = x.contiguous()
+        x = squash_dims(x, 3, 5)  # (batch, bar, beat, features, note)
         x = self.beat_conv(x)  # (batch, bar, beat, features, octave)
         x = torch.relu(x)
         x = squash_dims(x, -2)  # (batch, bar, beat, features)
@@ -82,10 +83,10 @@ class MelodyEncoder(nn.Module):
         )
 
     def forward(self, channel, beats, bars):
-        if len(channel.shape) == 6:
-            channel = squash_dims(channel, 3, 5)  # (batch, bar, beat, features, note)
-
-        x1 = self.beat_conv(channel)  # (batch, bar, beat, scale_degree, octave)
+        x1 = channel.transpose(-1, -2) # (batch, bar, beat, beat_fraction, note_features, note)
+        x1 = x1.contiguous()
+        x1 = squash_dims(x1, 3, 5)  # (batch, bar, beat, features, note)
+        x1 = self.beat_conv(x1)  # (batch, bar, beat, scale_degree, octave)
 
         x2 = self.beats_linear(beats)  # (batch, bar, beat, scale_degree)
         x2 = x2.unsqueeze(-1)  # (batch, bar, beat, scale_degree, octave)
@@ -99,19 +100,21 @@ class MelodyEncoder(nn.Module):
         x = squash_dims(x, -2) # (batch, bar, beat, note)
         x = torch.sigmoid(x)
         # x = F.hardtanh(x, 0., 1.)
-
-        x = x.unsqueeze(3) # (batch, bar, beat, features, note)
-        x = channel * x  # (batch, bar, beat, features, note)
+        x = x.unsqueeze(3).unsqueeze(-1) # (batch, bar, beat, beat_fraction, note, features)
+        x = channel * x  # (batch, bar, beat, beat_fraction, note, note_features)
         return x
 
 
 class StyleApplier(nn.Module):
-    def __init__(self):
+    def __init__(self, melody_size=5):
         super().__init__()
-        out_features = 10 * 5 * 8 * 7
+        self.melody_linear = nn.Linear(
+            in_features=melody_size,
+            out_features=5,
+        )
         self.style_linear = nn.Linear(
             in_features=100,
-            out_features=out_features,
+            out_features=10*5*8*7,
         )
 
     @classmethod
@@ -132,18 +135,19 @@ class StyleApplier(nn.Module):
 
     def forward(self, melody, style):
         x1 = melody
-        x1 = x1.view(*x1.shape[:3], 10, 5, -1)
+        x1 = x1.view(*x1.shape[:5], -1)
+        # x1 = self.melody_linear(x1)
 
         x2 = self.style_linear(style) # (batch, features)
-        x2 = x2.view(x1.size(0), 1, 1, 10, 5, -1)
-        # (batch, bar, beat, note_fraction, note_features, note)
+        x2 = x2.view(x1.size(0), 1, 1, 10, 7*8, 5)
+        # (batch, bar, beat, note_fraction, note, note_features)
 
         x = x1 + x2
-        duration = self.duration_activation(x[:, :, :, :, :1])
-        velocity = self.velocity_activation(x[:, :, :, :, 1:2])
-        accidentals = self.accidentals_activation(x[:, :, :, :, 2:])
-        x = torch.cat([duration, velocity, accidentals], 4)
-        # (batch, bar, beat, beat_fraction, note_features, note)
+        duration = self.duration_activation(x[:, :, :, :, :, :1])
+        velocity = self.velocity_activation(x[:, :, :, :, :, 1:2])
+        accidentals = self.accidentals_activation(x[:, :, :, :, :, 2:])
+        x = torch.cat([duration, velocity, accidentals], 5)
+        # (batch, bar, beat, beat_fraction, note, note_features)
         return x
 
 
@@ -164,29 +168,29 @@ class StyleTransferModel(nn.Module):
 
 
 def hard_output(x):
-    duration = x[:, :, :, :, :1]
-    velocity = x[:, :, :, :, 1:2]
-    accidentals = x[:, :, :, :, 2:]
+    duration = x[:, :, :, :, :, :1]
+    velocity = x[:, :, :, :, :, 1:2]
+    accidentals = x[:, :, :, :, :, 2:]
 
     velocity *= (velocity > .05).float()
 
     max_accidentals = accidentals.max(dim=-1)[0]
     new_accidentals = accidentals == max_accidentals.unsqueeze(-1)
     new_accidentals *= accidentals > .1
-    x = torch.cat([duration, velocity, new_accidentals.float()], 4)
+    x = torch.cat([duration, velocity, new_accidentals.float()], 5)
     return x
 
 
 def get_duration(x):
-    return x[:, :, :, :, 0]
+    return x[:, :, :, :, :, 0]
 
 
 def get_velocity(x):
-    return x[:, :, :, :, 1]
+    return x[:, :, :, :, :, 1]
 
 
 def get_accidentals(x):
-    return x[:, :, :, :, 2:]
+    return x[:, :, :, :, :, 2:]
 
 
 def get_duration_loss(input, target, mask):
@@ -233,7 +237,7 @@ def get_velocity_loss(input, target, mask):
 def get_accidentals_loss(input, target, mask):
     # x = nn.functional.binary_cross_entropy(input, target, reduction='none')
     x = (input - target) ** 2
-    x *= mask.unsqueeze(-2)
+    x *= mask.unsqueeze(-1)
     x = x.sum() / (mask.sum() * 3)
     return x
 
