@@ -112,6 +112,10 @@ class StyleApplier(nn.Module):
             in_features=melody_size,
             out_features=5,
         )
+        self.linear = nn.Linear(
+            in_features=melody_size,
+            out_features=5,
+        )
         self.style_linear = nn.Linear(
             in_features=100,
             out_features=10*5*8*7,
@@ -135,14 +139,15 @@ class StyleApplier(nn.Module):
 
     def forward(self, melody, style):
         x1 = melody
-        x1 = x1.view(*x1.shape[:5], -1)
-        # x1 = self.melody_linear(x1)
 
-        x2 = self.style_linear(style) # (batch, features)
+        x2 = self.style_linear(style)  # (batch, features)
         x2 = x2.view(x1.size(0), 1, 1, 10, 7*8, 5)
         # (batch, bar, beat, note_fraction, note, note_features)
 
         x = x1 + x2
+        # x = torch.relu(x)
+        x = self.linear(x)
+
         duration = self.duration_activation(x[:, :, :, :, :, :1])
         velocity = self.velocity_activation(x[:, :, :, :, :, 1:2])
         accidentals = self.accidentals_activation(x[:, :, :, :, :, 2:])
