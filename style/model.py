@@ -33,7 +33,7 @@ class ChannelEncoder(nn.Module):
     # todo: improve encoding beats
     def forward(self, x):
         # (batch, bar, beat, beat_fraction, note, note_features)
-        x = x.transpose(-1, -2) # (batch, bar, beat, beat_fraction, note_features, note)
+        x = x.transpose(-1, -2)  # (batch, bar, beat, beat_fraction, note_features, note)
         x = x.contiguous()
         x = squash_dims(x, 3, 5)  # (batch, bar, beat, features, note)
         x = self.beat_conv(x)  # (batch, bar, beat, features, octave)
@@ -83,7 +83,7 @@ class MelodyEncoder(nn.Module):
         )
 
     def forward(self, channel, beats, bars):
-        x1 = channel.transpose(-1, -2) # (batch, bar, beat, beat_fraction, note_features, note)
+        x1 = channel.transpose(-1, -2)  # (batch, bar, beat, beat_fraction, note_features, note)
         x1 = x1.contiguous()
         x1 = squash_dims(x1, 3, 5)  # (batch, bar, beat, features, note)
         x1 = self.beat_conv(x1)  # (batch, bar, beat, scale_degree, octave)
@@ -92,15 +92,15 @@ class MelodyEncoder(nn.Module):
         x2 = x2.unsqueeze(-1)  # (batch, bar, beat, scale_degree, octave)
 
         x3 = self.bars_linear(bars)  # (batch, bar, scale_degree)
-        x3 = x3.unsqueeze(-1).unsqueeze(2) # (batch, bar, beat, scale_degree, octave)
+        x3 = x3.unsqueeze(-1).unsqueeze(2)  # (batch, bar, beat, scale_degree, octave)
 
-        x = x1 + x2 + x3 # (batch, bar, beat, scale_degree, octave)
+        x = x1 + x2 + x3  # (batch, bar, beat, scale_degree, octave)
         # octave must come before scale degree
-        x = x.transpose(3, 4).contiguous() # (batch, bar, beat, octave, scale_degree)
-        x = squash_dims(x, -2) # (batch, bar, beat, note)
+        x = x.transpose(3, 4).contiguous()  # (batch, bar, beat, octave, scale_degree)
+        x = squash_dims(x, -2)  # (batch, bar, beat, note)
         x = torch.sigmoid(x)
         # x = F.hardtanh(x, 0., 1.)
-        x = x.unsqueeze(3).unsqueeze(-1) # (batch, bar, beat, beat_fraction, note, features)
+        x = x.unsqueeze(3).unsqueeze(-1)  # (batch, bar, beat, beat_fraction, note, features)
         x = channel * x  # (batch, bar, beat, beat_fraction, note, note_features)
         return x
 
