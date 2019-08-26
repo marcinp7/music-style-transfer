@@ -63,7 +63,7 @@ class StyleEncoder(nn.Module):
 
 
 class MelodyEncoder(nn.Module):
-    def __init__(self):
+    def __init__(self, melody_size=32):
         super().__init__()
         self.beat_conv = nn.Conv1d(
             in_channels=5*10,
@@ -80,6 +80,10 @@ class MelodyEncoder(nn.Module):
         self.bars_linear = nn.Linear(
             in_features=64,
             out_features=7,
+        )
+        self.melody_linear = nn.Linear(
+            in_features=5,
+            out_features=melody_size,
         )
 
     def forward(self, channel, beats, bars):
@@ -99,26 +103,23 @@ class MelodyEncoder(nn.Module):
         x = x.transpose(3, 4).contiguous()  # (batch, bar, beat, octave, scale_degree)
         x = squash_dims(x, -2)  # (batch, bar, beat, note)
         x = torch.sigmoid(x)
-        # x = F.hardtanh(x, 0., 1.)
         x = x.unsqueeze(3).unsqueeze(-1)  # (batch, bar, beat, beat_fraction, note, features)
         x = channel * x  # (batch, bar, beat, beat_fraction, note, note_features)
+        x = self.melody_linear(x)  # (batch, bar, beat, beat_fraction, note, note_features)
         return x
 
 
 class StyleApplier(nn.Module):
-    def __init__(self, melody_size=5):
+    def __init__(self, melody_size=32):
         super().__init__()
-        self.melody_linear = nn.Linear(
-            in_features=melody_size,
-            out_features=5,
-        )
+        self.melody_size = melody_size
         self.linear = nn.Linear(
             in_features=melody_size,
             out_features=5,
         )
         self.style_linear = nn.Linear(
             in_features=100,
-            out_features=10*5*8*7,
+            out_features=10*8*7*melody_size,
         )
 
     @classmethod
@@ -141,7 +142,7 @@ class StyleApplier(nn.Module):
         x1 = melody
 
         x2 = self.style_linear(style)  # (batch, features)
-        x2 = x2.view(x1.size(0), 1, 1, 10, 7*8, 5)
+        x2 = x2.view(x1.size(0), 1, 1, 10, 7*8, self.melody_size)
         # (batch, bar, beat, note_fraction, note, note_features)
 
         x = x1 + x2
