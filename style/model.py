@@ -30,7 +30,6 @@ class ChannelEncoder(nn.Module):
             batch_first=True,
         )
 
-    # todo: improve encoding beats
     def forward(self, x):
         # (batch, bar, beat, beat_fraction, note, note_features)
         x = x.transpose(-1, -2)  # (batch, bar, beat, beat_fraction, note_features, note)
@@ -171,6 +170,19 @@ class StyleTransferModel(nn.Module):
         style = self.style_encoder(bars)
         x = self.style_applier(melody, style)
         return x
+
+
+def combine(*tensors):
+    total_norm = torch.tensor(0.)
+    for tensor in tensors:
+        norm = tensor.norm()
+        tensor *= norm
+        total_norm += norm
+    total_sum = tensors[0]
+    for tensor in tensors[1:]:
+        total_sum += tensor
+    x = total_sum / total_norm
+    return x
 
 
 def hard_output(x):
