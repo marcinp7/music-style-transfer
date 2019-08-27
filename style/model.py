@@ -196,10 +196,9 @@ class MelodyEncoder(nn.Module):
         return x
 
 
-class StyleApplier(nn.Module):
+class PitchedStyleApplier(nn.Module):
     def __init__(self, melody_size=32, instrument_size=4):
         super().__init__()
-        self.melody_size = melody_size
         self.style_linear_degrees = nn.Linear(
             in_features=100,
             out_features=10*7*melody_size,
@@ -235,11 +234,11 @@ class StyleApplier(nn.Module):
 
     def forward(self, style, melody, rhythm, instruments):
         x = self.style_linear_degrees(style)  # (batch, features)
-        x1 = x.view(x.size(0), 1, 1, 1, 10, 1, 7, self.melody_size)
+        x1 = x.view(x.size(0), 1, 1, 1, 10, 1, 7, -1)
         # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
 
         x = self.style_linear_octaves(style)  # (batch, features)
-        x2 = x.view(x.size(0), 1, 1, 1, 10, 8, 1, self.melody_size)
+        x2 = x.view(x.size(0), 1, 1, 1, 10, 8, 1, -1)
         # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
 
         x3 = melody.view(*melody.shape[:4], 8, 7, -1)
@@ -263,6 +262,49 @@ class StyleApplier(nn.Module):
         accidentals = self.accidentals_activation(x[:, :, :, :, :, 2:])
         x = torch.cat([duration, velocity, accidentals], 5)
         # (batch, channel, bar, beat, beat_fraction, note, note_features)
+        return x
+
+
+class UnpitchedStyleApplier(nn.Module):
+    def __init__(self, rhythm_size=32):
+        super().__init__()
+        self.style_linear = nn.Linear(
+            in_features=100,
+            out_features=10*47*rhythm_size,
+        )
+        self.linear = nn.Linear(
+            in_features=rhythm_size,
+            out_features=2,
+        )
+
+    @classmethod
+    def duration_activation(cls, x):
+        x = torch.relu(x)
+        return x
+
+    @classmethod
+    def velocity_activation(cls, x):
+        x = torch.tanh(x)
+        x = torch.relu(x)
+        return x
+
+    def forward(self, style, rhythm):
+        x = self.style_linear(style)  # (batch, features)
+        x1 = x.view(x.size(0), 1, 1, 10, 47, -1)
+        # (batch, bar, beat, beat_fraction, note, features)
+
+        x2 = rhythm.view(*rhythm.shape[:4], 1, -1)
+        # (batch, bar, beat, beat_fraction, note, features)
+
+        x = x1 + x2
+        # (batch, bar, beat, beat_fraction, note, features)
+        # x = torch.relu(x)
+        x = self.linear(x)  # (batch, bar, beat, beat_fraction, note, note_features)
+
+        duration = self.duration_activation(x[:, :, :, :, :, :1])
+        velocity = self.velocity_activation(x[:, :, :, :, :, 1:2])
+        x = torch.cat([duration, velocity], 5)
+        # (batch, bar, beat, beat_fraction, note, note_features)
         return x
 
 
