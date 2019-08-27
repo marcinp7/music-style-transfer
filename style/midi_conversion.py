@@ -44,6 +44,7 @@ def merge_channels(channels):
 
 def get_channel_info(channel):
     channel_info = {k: v for k, v in channel.items() if k != 'messages'}
+    channel_info['pitched'] = is_pitched(channel_info['instrument_id'])
     return channel_info
 
 
@@ -374,7 +375,7 @@ class ChannelConverter:
         self.n_notes = self.n_octaves * 7
         self.n_unpitched = self.max_percussion - self.min_percussion + 1
         self.n_note_features = 5  # duration, velocity, sharp, flat, natural
-        self.n_unpitched_features = 2
+        self.n_unpitched_features = 2  # duration, velocity
 
     def channel2nchannel(self, channel):
         nchannel = {k: deepcopy(v)
