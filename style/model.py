@@ -5,8 +5,12 @@ from style.utils.pytorch import Distributed, squash_dims, LSTM
 
 
 class PitchedChannelsEncoder(nn.Module):
-    def __init__(self, n_conv_channels=50, beat_size=16, bar_size=32):
+    def __init__(self, instrument_size=4, n_conv_channels=50, beat_size=16, bar_size=32):
         super().__init__()
+        self.instruments_linear = nn.Linear(
+            in_features=instrument_size,
+            out_features=8*n_conv_channels,
+        )
         self.beat_conv = nn.Conv1d(
             in_channels=10*5,
             out_channels=n_conv_channels,
@@ -31,14 +35,24 @@ class PitchedChannelsEncoder(nn.Module):
         )
         self.bars_lstm = Distributed(self.bars_lstm, depth=1)
 
-    def forward(self, x):
-        # (batch, channel, bar, beat, beat_fraction, note, note_features)
-        x = x.transpose(-1, -2)  # (batch, channel, bar, beat, beat_fraction, note_features, note)
+    def forward(self, channels, instruments):
+        # channels: (batch, channel, bar, beat, beat_fraction, note, note_features)
+        # instruments: (batch, channel, features)
+
+        x = channels.transpose(-1, -2)
+        # (batch, channel, bar, beat, beat_fraction, note_features, note)
         x = x.contiguous()
         x = squash_dims(x, 4, 6)  # (batch, channel, bar, beat, features, note)
         x = self.beat_conv(x)  # (batch, channel, bar, beat, features, octave)
         x = torch.relu(x)
-        x = squash_dims(x, -2)  # (batch, channel, bar, beat, features)
+        x1 = squash_dims(x, -2)  # (batch, channel, bar, beat, features)
+
+        x = self.instruments_linear(instruments)  # (batch, channel, features)
+        x2 = x.unsqueeze(2).unsqueeze(2)  # (batch, channel, bar, beat, features)
+
+        x = x1 + x2  # (batch, channel, bar, beat, features)
+        x = torch.relu(x)
+
         beats = self.beats_lstm(x)[0]  # (batch, channel, bar, beat, features)
         x = beats[:, :, :, -1]  # (batch, channel, bar, features)
         bars = self.bars_lstm(x)[0]  # (batch, channel, bar, features)
@@ -68,9 +82,10 @@ class UnpitchedChannelsEncoder(nn.Module):
         )
         self.bars_lstm = Distributed(self.bars_lstm, depth=1)
 
-    def forward(self, x):
-        # (batch, channel, bar, beat, beat_fraction, note, note_features)
-        x = x.transpose(-1, -2)  # (batch, channel, bar, beat, beat_fraction, note_features, note)
+    def forward(self, channels):
+        # channels: (batch, channel, bar, beat, beat_fraction, note, note_features)
+        x = channels.transpose(-1, -2)
+        # (batch, channel, bar, beat, beat_fraction, note_features, note)
         x = x.contiguous()
         x = squash_dims(x, 4, 7)  # (batch, channel, bar, beat, features)
         x = self.beat_linear(x)  # (batch, channel, bar, beat, features)
@@ -93,7 +108,6 @@ class StyleEncoder(nn.Module):
         self.lstm = Distributed(self.lstm, depth=1)
 
     def forward(self, bars):
-        # input format: (batch, channel, bar, features)
         x = self.lstm(bars)[0]  # (batch, channel, bar, features)
         x = x[:, :, -1]  # (batch, channel, features)
         x = combine(x, dim=1)  # (batch, features)
@@ -101,8 +115,12 @@ class StyleEncoder(nn.Module):
 
 
 class RhythmEncoder(nn.Module):
-    def __init__(self, rhythm_size=32):
+    def __init__(self, n_notes, n_note_features, rhythm_size=32):
         super().__init__()
+        self.channels_linear = nn.Linear(
+            in_features=n_notes*n_note_features,
+            out_features=rhythm_size,
+        )
         self.beats_linear = nn.Linear(
             in_features=16,
             out_features=rhythm_size,
@@ -112,15 +130,19 @@ class RhythmEncoder(nn.Module):
             out_features=rhythm_size,
         )
 
-    def forward(self, beats, bars):
-        x1 = self.beats_linear(beats)  # (batch, channel, bar, beat, features)
+    def forward(self, channels, beats, bars):
+        x = squash_dims(channels, -2)  # (batch, channel, bar, beat, beat_fraction, features)
+        x1 = self.channels_linear(x)  # (batch, channel, bar, beat, beat_fraction, features)
 
-        x2 = self.bars_linear(bars)  # (batch, channel, bar, features)
-        x2 = x2.unsqueeze(3)  # (batch, channel, bar, beat, features)
+        x = self.beats_linear(beats)  # (batch, channel, bar, beat, features)
+        x2 = x.unsqueeze(4)  # (batch, channel, bar, beat, beat_fraction, features)
 
-        x = x1 + x2  # (batch, channel, bar, beat, features)
+        x = self.bars_linear(bars)  # (batch, channel, bar, features)
+        x3 = x.unsqueeze(3).unsqueeze(4)  # (batch, channel, bar, beat, beat_fraction, features)
+
+        x = x1 + x2 + x3  # (batch, channel, bar, beat, beat_fraction, features)
         x = torch.relu(x)
-        x = combine(x, dim=1)  # (batch, bar, beat, features)
+        x = combine(x, dim=1)  # (batch, bar, beat, beat_fraction, features)
         return x
 
 
@@ -149,17 +171,17 @@ class MelodyEncoder(nn.Module):
         )
 
     def forward(self, channels, beats, bars):
-        x1 = channels.transpose(-1, -2)
+        x = channels.transpose(-1, -2)
         # (batch, channel, bar, beat, beat_fraction, note_features, note)
-        x1 = x1.contiguous()
-        x1 = squash_dims(x1, 4, 6)  # (batch, channel, bar, beat, features, note)
-        x1 = self.beat_conv(x1)  # (batch, channel, bar, beat, scale_degree, octave)
+        x = x.contiguous()
+        x = squash_dims(x, 4, 6)  # (batch, channel, bar, beat, features, note)
+        x1 = self.beat_conv(x)  # (batch, channel, bar, beat, scale_degree, octave)
 
-        x2 = self.beats_linear(beats)  # (batch, channel, bar, beat, scale_degree)
-        x2 = x2.unsqueeze(-1)  # (batch, channel, bar, beat, scale_degree, octave)
+        x = self.beats_linear(beats)  # (batch, channel, bar, beat, scale_degree)
+        x2 = x.unsqueeze(-1)  # (batch, channel, bar, beat, scale_degree, octave)
 
-        x3 = self.bars_linear(bars)  # (batch, channel, bar, scale_degree)
-        x3 = x3.unsqueeze(-1).unsqueeze(3)  # (batch, channel, bar, beat, scale_degree, octave)
+        x = self.bars_linear(bars)  # (batch, channel, bar, scale_degree)
+        x3 = x.unsqueeze(-1).unsqueeze(3)  # (batch, channel, bar, beat, scale_degree, octave)
 
         x = x1 + x2 + x3  # (batch, channel, bar, beat, scale_degree, octave)
         # octave must come before scale degree
@@ -175,16 +197,24 @@ class MelodyEncoder(nn.Module):
 
 
 class StyleApplier(nn.Module):
-    def __init__(self, melody_size=32):
+    def __init__(self, melody_size=32, instrument_size=4):
         super().__init__()
         self.melody_size = melody_size
+        self.style_linear_degrees = nn.Linear(
+            in_features=100,
+            out_features=10*7*melody_size,
+        )
+        self.style_linear_octaves = nn.Linear(
+            in_features=100,
+            out_features=10*8*melody_size,
+        )
+        self.instruments_linear = nn.Linear(
+            in_features=instrument_size,
+            out_features=melody_size,
+        )
         self.linear = nn.Linear(
             in_features=melody_size,
             out_features=5,
-        )
-        self.style_linear = nn.Linear(
-            in_features=100,
-            out_features=10*8*7*melody_size,
         )
 
     @classmethod
@@ -203,22 +233,36 @@ class StyleApplier(nn.Module):
         x = torch.sigmoid(x)
         return x
 
-    def forward(self, melody, style):
-        x1 = melody
+    def forward(self, style, melody, rhythm, instruments):
+        x = self.style_linear_degrees(style)  # (batch, features)
+        x1 = x.view(x.size(0), 1, 1, 1, 10, 1, 7, self.melody_size)
+        # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
 
-        x2 = self.style_linear(style)  # (batch, features)
-        x2 = x2.view(x1.size(0), 1, 1, 10, 7*8, self.melody_size)
-        # (batch, bar, beat, note_fraction, note, note_features)
+        x = self.style_linear_octaves(style)  # (batch, features)
+        x2 = x.view(x.size(0), 1, 1, 1, 10, 8, 1, self.melody_size)
+        # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
 
-        x = x1 + x2
+        x3 = melody.view(*melody.shape[:4], 8, 7, -1)
+        # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
+
+        x4 = rhythm.view(rhythm.shape[0], 1, *rhythm.shape[1:4], 1, 1, -1)
+        # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
+
+        x = self.instruments_linear(instruments)  # (batch, channel, features)
+        x5 = x.view(*x.shape[:2], 1, 1, 1, 1, 1, -1)
+        # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
+
+        x = x1 + x2 + x3 + x4 + x5
+        # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
+        x = squash_dims(x, 5, 7)  # (batch, channel, bar, beat, beat_fraction, note, features)
         # x = torch.relu(x)
-        x = self.linear(x)
+        x = self.linear(x)  # (batch, channel, bar, beat, beat_fraction, note, note_features)
 
         duration = self.duration_activation(x[:, :, :, :, :, :1])
         velocity = self.velocity_activation(x[:, :, :, :, :, 1:2])
         accidentals = self.accidentals_activation(x[:, :, :, :, :, 2:])
         x = torch.cat([duration, velocity, accidentals], 5)
-        # (batch, bar, beat, beat_fraction, note, note_features)
+        # (batch, channel, bar, beat, beat_fraction, note, note_features)
         return x
 
 
