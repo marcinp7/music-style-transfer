@@ -309,19 +309,39 @@ class UnpitchedStyleApplier(nn.Module):
 
 
 class StyleTransferModel(nn.Module):
-    def __init__(self, channel_encoder, melody_encoder, style_encoder, style_applier):
+    def __init__(self, pitched_channels_encoder, unpitched_channels_encoder, style_encoder,
+                 melody_encoder, pitched_rhythm_encoder, unpitched_rhythm_encoder,
+                 pitched_style_applier, unpitched_style_applier):
         super().__init__()
-        self.channel_encoder = channel_encoder
-        self.melody_encoder = melody_encoder
-        self.style_encoder = style_encoder
-        self.style_applier = style_applier
+        self.pitched_channels_encoder = pitched_channels_encoder
+        self.unpitched_channels_encoder = unpitched_channels_encoder
 
-    def forward(self, x):
-        beats, bars = self.channel_encoder(x)
-        melody = self.melody_encoder(x, beats, bars)
+        self.style_encoder = style_encoder
+        self.melody_encoder = melody_encoder
+
+        self.pitched_rhythm_encoder = pitched_rhythm_encoder
+        self.unpitched_rhythm_encoder = unpitched_rhythm_encoder
+
+        self.pitched_style_applier = pitched_style_applier
+        self.unpitched_style_applier = unpitched_style_applier
+
+    def forward(self, pitched_channels, instruments, unpitched_channels):
+        pitched_beats, pitched_bars = self.pitched_channels_encoder(pitched_channels, instruments)
+        unpitched_beats, unpitched_bars = self.unpitched_channels_encoder(unpitched_channels)
+        bars = torch.cat([pitched_bars, unpitched_bars], 1)
+
         style = self.style_encoder(bars)
-        x = self.style_applier(melody, style)
-        return x
+        melody = self.melody_encoder(pitched_channels, pitched_beats, pitched_bars)
+
+        pitched_rhythm = self.pitched_rhythm_encoder(pitched_channels, pitched_beats, pitched_bars)
+        unpitched_rhythm = self.unpitched_rhythm_encoder(unpitched_channels, unpitched_beats,
+                                                         unpitched_bars)
+        rhythm = combine(pitched_rhythm, unpitched_rhythm)
+
+        x_pitched = self.pitched_style_applier(style, melody, rhythm, instruments)
+        x_unpitched = self.unpitched_style_applier(style, rhythm)
+
+        return x_pitched, x_unpitched
 
 
 def combine(*tensors, dim=None):
