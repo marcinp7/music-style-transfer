@@ -4,24 +4,24 @@ from torch import nn
 from style.utils.pytorch import Distributed, squash_dims, LSTM
 
 
-class ChannelEncoder(nn.Module):
-    def __init__(self, n_channels=50, beat_size=16, bar_size=32):
+class PitchedChannelsEncoder(nn.Module):
+    def __init__(self, n_conv_channels=50, beat_size=16, bar_size=32):
         super().__init__()
         self.beat_conv = nn.Conv1d(
             in_channels=10*5,
-            out_channels=n_channels,
+            out_channels=n_conv_channels,
             kernel_size=14,
             stride=7,
             padding=4,
         )
-        self.beat_conv = Distributed(self.beat_conv, depth=2)
+        self.beat_conv = Distributed(self.beat_conv, depth=3)
         self.beats_lstm = LSTM(
-            input_size=8*n_channels,
+            input_size=8*n_conv_channels,
             hidden_size=beat_size,
             num_layers=1,
             batch_first=True,
         )
-        self.beats_lstm = Distributed(self.beats_lstm, depth=1)
+        self.beats_lstm = Distributed(self.beats_lstm, depth=2)
         self.bars_lstm = LSTM(
             input_size=beat_size,
             hidden_size=bar_size,
@@ -29,18 +29,55 @@ class ChannelEncoder(nn.Module):
             bidirectional=True,
             batch_first=True,
         )
+        self.bars_lstm = Distributed(self.bars_lstm, depth=1)
 
     def forward(self, x):
-        # (batch, bar, beat, beat_fraction, note, note_features)
-        x = x.transpose(-1, -2)  # (batch, bar, beat, beat_fraction, note_features, note)
+        # (batch, channel, bar, beat, beat_fraction, note, note_features)
+        x = x.transpose(-1, -2)  # (batch, channel, bar, beat, beat_fraction, note_features, note)
         x = x.contiguous()
-        x = squash_dims(x, 3, 5)  # (batch, bar, beat, features, note)
-        x = self.beat_conv(x)  # (batch, bar, beat, features, octave)
+        x = squash_dims(x, 4, 6)  # (batch, channel, bar, beat, features, note)
+        x = self.beat_conv(x)  # (batch, channel, bar, beat, features, octave)
         x = torch.relu(x)
-        x = squash_dims(x, -2)  # (batch, bar, beat, features)
-        beats = self.beats_lstm(x)[0]  # (batch, bar, beat, features)
-        x = beats[:, :, -1]  # (batch, bar, features)
-        bars = self.bars_lstm(x)[0]  # (batch, bar, features)
+        x = squash_dims(x, -2)  # (batch, channel, bar, beat, features)
+        beats = self.beats_lstm(x)[0]  # (batch, channel, bar, beat, features)
+        x = beats[:, :, :, -1]  # (batch, channel, bar, features)
+        bars = self.bars_lstm(x)[0]  # (batch, channel, bar, features)
+        return beats, bars
+
+
+class UnpitchedChannelsEncoder(nn.Module):
+    def __init__(self, beat_size=16, bar_size=32):
+        super().__init__()
+        self.beat_linear = nn.Linear(
+            in_features=10*47*2,
+            out_features=100,
+        )
+        self.beats_lstm = LSTM(
+            input_size=100,
+            hidden_size=beat_size,
+            num_layers=1,
+            batch_first=True,
+        )
+        self.beats_lstm = Distributed(self.beats_lstm, depth=2)
+        self.bars_lstm = LSTM(
+            input_size=beat_size,
+            hidden_size=bar_size,
+            num_layers=1,
+            bidirectional=True,
+            batch_first=True,
+        )
+        self.bars_lstm = Distributed(self.bars_lstm, depth=1)
+
+    def forward(self, x):
+        # (batch, channel, bar, beat, beat_fraction, note, note_features)
+        x = x.transpose(-1, -2)  # (batch, channel, bar, beat, beat_fraction, note_features, note)
+        x = x.contiguous()
+        x = squash_dims(x, 4, 7)  # (batch, channel, bar, beat, features)
+        x = self.beat_linear(x)  # (batch, channel, bar, beat, features)
+        x = torch.relu(x)
+        beats = self.beats_lstm(x)[0]  # (batch, channel, bar, beat, features)
+        x = beats[:, :, :, -1]  # (batch, channel, bar, features)
+        bars = self.bars_lstm(x)[0]  # (batch, channel, bar, features)
         return beats, bars
 
 
@@ -53,11 +90,37 @@ class StyleEncoder(nn.Module):
             num_layers=1,
             batch_first=True,
         )
+        self.lstm = Distributed(self.lstm, depth=1)
 
     def forward(self, bars):
-        # input format: (batch, bar, features)
-        x = self.lstm(bars)[0]  # (batch, bar, features)
-        x = x[:, -1]  # (batch, features)
+        # input format: (batch, channel, bar, features)
+        x = self.lstm(bars)[0]  # (batch, channel, bar, features)
+        x = x[:, :, -1]  # (batch, channel, features)
+        x = combine(x, dim=1)  # (batch, features)
+        return x
+
+
+class RhythmEncoder(nn.Module):
+    def __init__(self, rhythm_size=32):
+        super().__init__()
+        self.beats_linear = nn.Linear(
+            in_features=16,
+            out_features=rhythm_size,
+        )
+        self.bars_linear = nn.Linear(
+            in_features=64,
+            out_features=rhythm_size,
+        )
+
+    def forward(self, beats, bars):
+        x1 = self.beats_linear(beats)  # (batch, channel, bar, beat, features)
+
+        x2 = self.bars_linear(bars)  # (batch, channel, bar, features)
+        x2 = x2.unsqueeze(3)  # (batch, channel, bar, beat, features)
+
+        x = x1 + x2  # (batch, channel, bar, beat, features)
+        x = torch.relu(x)
+        x = combine(x, dim=1)  # (batch, bar, beat, features)
         return x
 
 
@@ -71,9 +134,9 @@ class MelodyEncoder(nn.Module):
             stride=7,
             padding=4,
         )
-        self.beat_conv = Distributed(self.beat_conv, depth=2)
+        self.beat_conv = Distributed(self.beat_conv, depth=3)
         self.beats_linear = nn.Linear(
-            in_features=32,
+            in_features=16,
             out_features=7,
         )
         self.bars_linear = nn.Linear(
@@ -85,26 +148,29 @@ class MelodyEncoder(nn.Module):
             out_features=melody_size,
         )
 
-    def forward(self, channel, beats, bars):
-        x1 = channel.transpose(-1, -2)  # (batch, bar, beat, beat_fraction, note_features, note)
+    def forward(self, channels, beats, bars):
+        x1 = channels.transpose(-1, -2)
+        # (batch, channel, bar, beat, beat_fraction, note_features, note)
         x1 = x1.contiguous()
-        x1 = squash_dims(x1, 3, 5)  # (batch, bar, beat, features, note)
-        x1 = self.beat_conv(x1)  # (batch, bar, beat, scale_degree, octave)
+        x1 = squash_dims(x1, 4, 6)  # (batch, channel, bar, beat, features, note)
+        x1 = self.beat_conv(x1)  # (batch, channel, bar, beat, scale_degree, octave)
 
-        x2 = self.beats_linear(beats)  # (batch, bar, beat, scale_degree)
-        x2 = x2.unsqueeze(-1)  # (batch, bar, beat, scale_degree, octave)
+        x2 = self.beats_linear(beats)  # (batch, channel, bar, beat, scale_degree)
+        x2 = x2.unsqueeze(-1)  # (batch, channel, bar, beat, scale_degree, octave)
 
-        x3 = self.bars_linear(bars)  # (batch, bar, scale_degree)
-        x3 = x3.unsqueeze(-1).unsqueeze(2)  # (batch, bar, beat, scale_degree, octave)
+        x3 = self.bars_linear(bars)  # (batch, channel, bar, scale_degree)
+        x3 = x3.unsqueeze(-1).unsqueeze(3)  # (batch, channel, bar, beat, scale_degree, octave)
 
-        x = x1 + x2 + x3  # (batch, bar, beat, scale_degree, octave)
+        x = x1 + x2 + x3  # (batch, channel, bar, beat, scale_degree, octave)
         # octave must come before scale degree
-        x = x.transpose(3, 4).contiguous()  # (batch, bar, beat, octave, scale_degree)
-        x = squash_dims(x, -2)  # (batch, bar, beat, note)
+        x = x.transpose(4, 5).contiguous()  # (batch, channel, bar, beat, octave, scale_degree)
+        x = squash_dims(x, -2)  # (batch, channel, bar, beat, note)
         x = torch.sigmoid(x)
-        x = x.unsqueeze(3).unsqueeze(-1)  # (batch, bar, beat, beat_fraction, note, features)
-        x = channel * x  # (batch, bar, beat, beat_fraction, note, note_features)
-        x = self.melody_linear(x)  # (batch, bar, beat, beat_fraction, note, note_features)
+        x = x.unsqueeze(-1).unsqueeze(4)
+        # (batch, channel, bar, beat, beat_fraction, note, features)
+        x = channels * x  # (batch, channel, bar, beat, beat_fraction, note, note_features)
+        x = self.melody_linear(x)  # (batch, channel, bar, beat, beat_fraction, note, note_features)
+        x = combine(x, dim=1)  # (batch, bar, beat, beat_fraction, note, note_features)
         return x
 
 
@@ -172,17 +238,23 @@ class StyleTransferModel(nn.Module):
         return x
 
 
-def combine(*tensors):
-    total_norm = torch.tensor(0.)
-    for tensor in tensors:
-        norm = tensor.norm()
-        tensor *= norm
-        total_norm += norm
-    total_sum = tensors[0]
-    for tensor in tensors[1:]:
-        total_sum += tensor
-    x = total_sum / total_norm
-    return x
+def combine(*tensors, dim=None):
+    assert len(tensors)
+    if len(tensors) == 1:
+        tensor = tensors[0]
+    else:
+        tensor = torch.stack(tensors)
+        dim = 0
+    if dim is None:
+        return tensor
+
+    x = tensor ** 2
+    dims = [i for i in range(len(tensor.shape)) if i != dim]
+    x = x.sum(dims, keepdim=True)
+    norm = torch.sqrt(x)
+
+    tensor *= norm
+    return tensor.sum(dim) / norm.sum()
 
 
 def hard_output(x):
