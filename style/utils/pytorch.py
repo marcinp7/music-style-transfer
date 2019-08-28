@@ -9,7 +9,8 @@ def squash_dims(tensor, dim_begin, dim_end=None):
     if dim_begin < 0:
         dim_begin += len(shape)
         dim_end += len(shape)
-    tensor = tensor.view(*shape[:dim_begin], -1, *shape[dim_end:])
+    to_squash = shape[dim_begin:dim_end]
+    tensor = tensor.view(*shape[:dim_begin], np.prod(to_squash), *shape[dim_end:])
     return tensor
 
 
