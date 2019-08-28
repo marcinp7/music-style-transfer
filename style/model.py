@@ -305,6 +305,7 @@ class UnpitchedStyleApplier(nn.Module):
         velocity = self.velocity_activation(x[:, :, :, :, :, 1:2])
         x = torch.cat([duration, velocity], 5)
         # (batch, bar, beat, beat_fraction, note, note_features)
+        x = x.unsqueeze(1)  # (batch, channel, bar, beat, beat_fraction, note, note_features)
         return x
 
 
@@ -371,16 +372,19 @@ def combine(*tensors, dim=None):
 
 
 def hard_output(x):
-    duration = x[:, :, :, :, :, :1]
-    velocity = x[:, :, :, :, :, 1:2]
-    accidentals = x[:, :, :, :, :, 2:]
+    duration = x[:, :, :, :, :, :, :1]
+    velocity = x[:, :, :, :, :, :, 1:2]
 
     velocity *= (velocity > .05).float()
 
-    max_accidentals = accidentals.max(dim=-1)[0]
-    new_accidentals = accidentals == max_accidentals.unsqueeze(-1)
-    new_accidentals *= accidentals > .1
-    x = torch.cat([duration, velocity, new_accidentals.float()], 5)
+    if x.shape[-1] > 2:
+        accidentals = x[:, :, :, :, :, :, 2:]
+        max_accidentals = accidentals.max(dim=-1)[0]
+        new_accidentals = accidentals == max_accidentals.unsqueeze(-1)
+        new_accidentals *= accidentals > .1
+        x = torch.cat([duration, velocity, new_accidentals.float()], -1)
+    else:
+        x = torch.cat([duration, velocity], -1)
     return x
 
 
