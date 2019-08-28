@@ -338,15 +338,16 @@ class StyleTransferModel(nn.Module):
                                                              unpitched_bars)
 
             bars = torch.cat([pitched_bars, unpitched_bars], 1)
-            rhythm = combine(pitched_rhythm, unpitched_rhythm)            
+            rhythm = combine(pitched_rhythm, unpitched_rhythm)
 
         style = self.style_encoder(bars)
         melody = self.melody_encoder(pitched_channels, pitched_beats, pitched_bars)
 
         x_pitched = self.pitched_style_applier(style, melody, rhythm, instruments)
         if unpitched_channels is None:
-            return x_pitched
-        x_unpitched = self.unpitched_style_applier(style, rhythm)
+            x_unpitched = None
+        else:
+            x_unpitched = self.unpitched_style_applier(style, rhythm)
         return x_pitched, x_unpitched
 
 
@@ -365,8 +366,8 @@ def combine(*tensors, dim=None):
     x = x.sum(dims, keepdim=True)
     norm = torch.sqrt(x)
 
-    tensor *= norm
-    return tensor.sum(dim) / norm.sum()
+    x = tensor * norm
+    return x.sum(dim) / norm.sum()
 
 
 def hard_output(x):
@@ -384,15 +385,15 @@ def hard_output(x):
 
 
 def get_duration(x):
-    return x[:, :, :, :, :, 0]
+    return x[:, :, :, :, :, :, 0]
 
 
 def get_velocity(x):
-    return x[:, :, :, :, :, 1]
+    return x[:, :, :, :, :, :, 1]
 
 
 def get_accidentals(x):
-    return x[:, :, :, :, :, 2:]
+    return x[:, :, :, :, :, :, 2:]
 
 
 def get_duration_loss(input, target, mask):
@@ -454,4 +455,4 @@ def get_losses(input, target):
 
     duration_loss = get_duration_loss(get_duration(input), get_duration(target), mask)
     accidentals_loss = get_accidentals_loss(get_accidentals(input), get_accidentals(target), mask)
-    return notes_loss, velocity_loss, accidentals_loss, duration_loss
+    return notes_loss, velocity_loss, duration_loss, accidentals_loss
