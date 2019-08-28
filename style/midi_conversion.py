@@ -569,6 +569,12 @@ class ChannelConverter:
                         qchannel['notes'].append(note)
         return qchannel
 
+    def nchannel2vchannel(self, nchannel):
+        kchannel = self.nchannel2kchannel(nchannel)
+        qchannel = self.kchannel2qchannel(kchannel)
+        vchannel = self.qchannel2vchannel(qchannel)
+        return vchannel
+
     @property
     def mode(self):
         return self.info['scale']['mode']
