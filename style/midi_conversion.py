@@ -575,6 +575,11 @@ class ChannelConverter:
         vchannel = self.qchannel2vchannel(qchannel)
         return vchannel
 
+    def vchannel2channel(self, channel_info, vchannel):
+        qchannel = self.vchannel2qchannel(channel_info, vchannel)
+        channel = self.qchannel2channel(channel_info, qchannel)
+        return channel
+
     @property
     def mode(self):
         return self.info['scale']['mode']
