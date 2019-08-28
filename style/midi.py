@@ -22,6 +22,8 @@ max_velocity = 127
 
 def parse_programs(path):
     program2instrument = {}
+    program2group = {}
+    group_name = None
     with open(path) as f:
         for line in f:
             line = line.strip()
@@ -29,11 +31,16 @@ def parse_programs(path):
             if m:
                 program, name = m.groups()
                 program2instrument[int(program)-1] = name
-    return program2instrument
+                program2group[int(program) - 1] = group_name
+            else:
+                group_name = line
+    return program2instrument, program2group
 
 
-program2instrument = parse_programs(get_path('midi_programs.txt'))
+program2instrument, program2group = parse_programs(get_path('midi_programs.txt'))
+
 program2instrument[-1] = 'Percussion'
+# program2group[-1] = 'Percussion'
 
 
 def get_instrument_id(program, channel=0):
