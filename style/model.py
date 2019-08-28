@@ -325,22 +325,28 @@ class StyleTransferModel(nn.Module):
         self.pitched_style_applier = pitched_style_applier
         self.unpitched_style_applier = unpitched_style_applier
 
-    def forward(self, pitched_channels, instruments, unpitched_channels):
+    def forward(self, pitched_channels, instruments, unpitched_channels=None):
         pitched_beats, pitched_bars = self.pitched_channels_encoder(pitched_channels, instruments)
-        unpitched_beats, unpitched_bars = self.unpitched_channels_encoder(unpitched_channels)
-        bars = torch.cat([pitched_bars, unpitched_bars], 1)
+        pitched_rhythm = self.pitched_rhythm_encoder(pitched_channels, pitched_beats, pitched_bars)
+
+        if unpitched_channels is None:
+            bars = pitched_bars
+            rhythm = pitched_rhythm
+        else:
+            unpitched_beats, unpitched_bars = self.unpitched_channels_encoder(unpitched_channels)
+            unpitched_rhythm = self.unpitched_rhythm_encoder(unpitched_channels, unpitched_beats,
+                                                             unpitched_bars)
+
+            bars = torch.cat([pitched_bars, unpitched_bars], 1)
+            rhythm = combine(pitched_rhythm, unpitched_rhythm)            
 
         style = self.style_encoder(bars)
         melody = self.melody_encoder(pitched_channels, pitched_beats, pitched_bars)
 
-        pitched_rhythm = self.pitched_rhythm_encoder(pitched_channels, pitched_beats, pitched_bars)
-        unpitched_rhythm = self.unpitched_rhythm_encoder(unpitched_channels, unpitched_beats,
-                                                         unpitched_bars)
-        rhythm = combine(pitched_rhythm, unpitched_rhythm)
-
         x_pitched = self.pitched_style_applier(style, melody, rhythm, instruments)
+        if unpitched_channels is None:
+            return x_pitched
         x_unpitched = self.unpitched_style_applier(style, rhythm)
-
         return x_pitched, x_unpitched
 
 
