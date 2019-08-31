@@ -352,7 +352,7 @@ class StyleTransferModel(nn.Module):
         return x_pitched, x_unpitched
 
 
-def combine(*tensors, dim=None):
+def combine(*tensors, dim=None, safe=True):
     assert len(tensors)
     if len(tensors) == 1:
         tensor = tensors[0]
@@ -365,7 +365,10 @@ def combine(*tensors, dim=None):
     x = tensor ** 2
     dims = [i for i in range(len(tensor.shape)) if i != dim]
     x = x.sum(dims, keepdim=True)
-    norm = torch.sqrt(x)
+    if safe:
+        norm = torch.sqrt(1. + x)
+    else:
+        norm = torch.sqrt(x)
 
     x = tensor * norm
     return x.sum(dim) / norm.sum()
@@ -375,7 +378,7 @@ def hard_output(x):
     duration = x[:, :, :, :, :, :, :1]
     velocity = x[:, :, :, :, :, :, 1:2]
 
-    velocity *= (velocity > .05).float()
+    velocity *= (velocity > .01).float()
 
     if x.shape[-1] > 2:
         accidentals = x[:, :, :, :, :, :, 2:]
@@ -407,7 +410,7 @@ def get_duration_loss(input, target, mask):
     return x
 
 
-def get_smooth_f1_score(target, error):
+def get_smooth_f1_score(target, error, safe=True):
     positive = target
     negative = 1. - positive
 
@@ -421,29 +424,31 @@ def get_smooth_f1_score(target, error):
     FP = false_positive.sum()
     FN = false_negative.sum()
 
-    precision = TP / (TP + FP)
+    if safe and TP + FP == 0.:
+        precision = TP / (1. + TP + FP)
+    else:
+        precision = TP / (TP + FP)
     recall = TP / (TP + FN)
 
-    f1_score = 2 * precision * recall / (precision + recall)
-
+    f1_score = 2 / (1 / precision + 1 / recall)
     return f1_score, precision, recall
 
 
 def get_notes_loss(input, target):
-    error = (target - input) ** 2
+    error = (target - input).abs()
     f1_score = get_smooth_f1_score(target, error)[0]
     return 1. - f1_score
 
 
 def get_velocity_loss(input, target, mask):
-    x = (target - input) ** 2
+    x = (target - input).abs()
     x *= mask
     return x.sum() / mask.sum()
 
 
 def get_accidentals_loss(input, target, mask):
     # x = nn.functional.binary_cross_entropy(input, target, reduction='none')
-    x = (input - target) ** 2
+    x = (input - target).abs()
     x *= mask.unsqueeze(-1)
     x = x.sum() / (mask.sum() * 3)
     return x
