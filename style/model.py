@@ -257,10 +257,10 @@ class PitchedStyleApplier(nn.Module):
         # x = torch.relu(x)
         x = self.linear(x)  # (batch, channel, bar, beat, beat_fraction, note, note_features)
 
-        duration = self.duration_activation(x[:, :, :, :, :, :1])
-        velocity = self.velocity_activation(x[:, :, :, :, :, 1:2])
-        accidentals = self.accidentals_activation(x[:, :, :, :, :, 2:])
-        x = torch.cat([duration, velocity, accidentals], 5)
+        duration = self.duration_activation(x[:, :, :, :, :, :, :1])
+        velocity = self.velocity_activation(x[:, :, :, :, :, :, 1:2])
+        accidentals = self.accidentals_activation(x[:, :, :, :, :, :, 2:])
+        x = torch.cat([duration, velocity, accidentals], 6)
         # (batch, channel, bar, beat, beat_fraction, note, note_features)
         return x
 

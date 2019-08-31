@@ -102,6 +102,7 @@ def create_midi(info, *instruments, max_delta_time=math.inf):
             ))
         for msg in instrument['messages']:
             velocity = int(msg.velocity * max_velocity)
+            assert velocity <= 127, (velocity, msg.velocity)
             messages.append(Message(
                 msg.type,
                 channel=instrument['channel_id'],
