@@ -73,7 +73,6 @@ def play_midi(mid, portname=None):
             output.reset()
 
 
-# todo: support multiple instruments in single channel
 def create_midi(info, *instruments, max_delta_time=math.inf):
     max_delta_time = mido.second2tick(max_delta_time, info['ticks_per_beat'], info['tempo'])
     if math.isfinite(max_delta_time):

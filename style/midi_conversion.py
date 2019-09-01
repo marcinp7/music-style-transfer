@@ -343,6 +343,7 @@ def get_notes_dist(info, nchannel):
     note2time = {key: mido.tick2second(time, info['ticks_per_beat'], info['tempo'])
                  for key, time in note2time.items()}
     note2time['instrument'] = nchannel['instrument_name']
+    note2time['instrument_id'] = nchannel['instrument_id']
     return note2time
 
 
