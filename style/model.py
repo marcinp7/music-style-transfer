@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 from style.utils.pytorch import Distributed, squash_dims, LSTM
 
@@ -44,14 +45,14 @@ class PitchedChannelsEncoder(nn.Module):
         x = x.contiguous()
         x = squash_dims(x, 4, 6)  # (batch, channel, bar, beat, features, note)
         x = self.beat_conv(x)  # (batch, channel, bar, beat, features, octave)
-        x = torch.relu(x)
+        x = F.leaky_relu(x)
         x1 = squash_dims(x, -2)  # (batch, channel, bar, beat, features)
 
         x = self.instruments_linear(instruments)  # (batch, channel, features)
         x2 = x.unsqueeze(2).unsqueeze(2)  # (batch, channel, bar, beat, features)
 
         x = x1 + x2  # (batch, channel, bar, beat, features)
-        x = torch.relu(x)
+        x = F.leaky_relu(x)
 
         beats = self.beats_lstm(x)[0]  # (batch, channel, bar, beat, features)
         x = beats[:, :, :, -1]  # (batch, channel, bar, features)
@@ -89,7 +90,7 @@ class UnpitchedChannelsEncoder(nn.Module):
         x = x.contiguous()
         x = squash_dims(x, 4, 7)  # (batch, channel, bar, beat, features)
         x = self.beat_linear(x)  # (batch, channel, bar, beat, features)
-        x = torch.relu(x)
+        x = F.leaky_relu(x)
         beats = self.beats_lstm(x)[0]  # (batch, channel, bar, beat, features)
         x = beats[:, :, :, -1]  # (batch, channel, bar, features)
         bars = self.bars_lstm(x)[0]  # (batch, channel, bar, features)
@@ -141,7 +142,7 @@ class RhythmEncoder(nn.Module):
         x3 = x.unsqueeze(3).unsqueeze(4)  # (batch, channel, bar, beat, beat_fraction, features)
 
         x = x1 + x2 + x3  # (batch, channel, bar, beat, beat_fraction, features)
-        x = torch.relu(x)
+        x = F.leaky_relu(x)
         x = combine(x, dim=1)  # (batch, bar, beat, beat_fraction, features)
         return x
 
@@ -196,6 +197,23 @@ class MelodyEncoder(nn.Module):
         return x
 
 
+def duration_activation(x):
+    x = torch.relu(x)
+    return x
+
+
+def velocity_activation(x):
+    # x = torch.tanh(x)
+    # x = torch.relu(x)
+    x = torch.sigmoid(x)
+    return x
+
+
+def accidentals_activation(x):
+    x = torch.sigmoid(x)
+    return x
+
+
 class PitchedStyleApplier(nn.Module):
     def __init__(self, melody_size=32, instrument_size=4):
         super().__init__()
@@ -215,22 +233,6 @@ class PitchedStyleApplier(nn.Module):
             in_features=melody_size,
             out_features=5,
         )
-
-    @classmethod
-    def duration_activation(cls, x):
-        x = torch.relu(x)
-        return x
-
-    @classmethod
-    def velocity_activation(cls, x):
-        x = torch.tanh(x)
-        x = torch.relu(x)
-        return x
-
-    @classmethod
-    def accidentals_activation(cls, x):
-        x = torch.sigmoid(x)
-        return x
 
     def forward(self, style, melody, rhythm, instruments):
         x = self.style_linear_degrees(style)  # (batch, features)
@@ -277,17 +279,6 @@ class UnpitchedStyleApplier(nn.Module):
             out_features=2,
         )
 
-    @classmethod
-    def duration_activation(cls, x):
-        x = torch.relu(x)
-        return x
-
-    @classmethod
-    def velocity_activation(cls, x):
-        x = torch.tanh(x)
-        x = torch.relu(x)
-        return x
-
     def forward(self, style, rhythm):
         x = self.style_linear(style)  # (batch, features)
         x1 = x.view(x.size(0), 1, 1, 10, 47, -1)
@@ -301,8 +292,8 @@ class UnpitchedStyleApplier(nn.Module):
         # x = torch.relu(x)
         x = self.linear(x)  # (batch, bar, beat, beat_fraction, note, note_features)
 
-        duration = self.duration_activation(x[:, :, :, :, :, :1])
-        velocity = self.velocity_activation(x[:, :, :, :, :, 1:2])
+        duration = duration_activation(x[:, :, :, :, :, :1])
+        velocity = velocity_activation(x[:, :, :, :, :, 1:2])
         x = torch.cat([duration, velocity], 5)
         # (batch, bar, beat, beat_fraction, note, note_features)
         x = x.unsqueeze(1)  # (batch, channel, bar, beat, beat_fraction, note, note_features)
@@ -424,13 +415,16 @@ def get_smooth_f1_score(target, error, safe=True):
     FP = false_positive.sum()
     FN = false_negative.sum()
 
-    if safe and TP + FP == 0.:
+    if safe and TP == 0 and FP == 0.:
         precision = TP / (1. + TP + FP)
     else:
         precision = TP / (TP + FP)
     recall = TP / (TP + FN)
 
-    f1_score = 2 / (1 / precision + 1 / recall)
+    if precision == 0 and recall == 0:
+        f1_score = 2 * precision * recall / (1 + precision + recall)
+    else:
+        f1_score = 2 * precision * recall / (precision + recall)
     return f1_score, precision, recall
 
 
