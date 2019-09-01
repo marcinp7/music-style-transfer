@@ -442,7 +442,7 @@ class ChannelConverter:
         divisor2ticks = {divisor: self.info['ticks_per_beat'] / divisor
                          for divisor in self.beat_divisors}
 
-        def note_quantizations(time, duration=None):
+        def note_quantizations(time):
             # todo: use numpy
             for divisor, ticks in divisor2ticks.items():
                 qtime, time_error = round_number(time, ticks)
@@ -453,8 +453,7 @@ class ChannelConverter:
 
         for note in qchannel['notes']:
             time = note.time
-            duration = note.duration
-            qtime, divisor = min(note_quantizations(time, duration), key=lambda x: x[1])[0]
+            qtime, divisor = min(note_quantizations(time), key=lambda x: x[1])[0]
             note.qtime = int(qtime)
             note.qduration = note.end_time - note.qtime
 
@@ -508,7 +507,8 @@ class ChannelConverter:
                 continue
 
             partial_beat = self.get_empty_beat(pitched)
-            features = [note.qduration, note.velocity]
+            duration = note.qduration / self.info['ticks_per_beat']
+            features = [duration, note.velocity]
             if pitched:
                 if note.accidental == 'flat':
                     v = [1., 0., 0.]
@@ -564,7 +564,7 @@ class ChannelConverter:
                             bar=bar_idx,
                             beat=beat_idx,
                             beat_fraction=fraction,
-                            qduration=int(duration),
+                            qduration=int(duration * self.info['ticks_per_beat']),
                             velocity=velocity,
                         )
                         qchannel['notes'].append(note)

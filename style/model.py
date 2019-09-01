@@ -407,8 +407,8 @@ def get_accidentals(x):
 
 
 def get_duration_loss(input, target, mask):
-    # x = (torch.log((1. + input) / (1. + target)) * mask) ** 2
-    x = (torch.sigmoid(input) - torch.sigmoid(target)) ** 2
+    x = (torch.tanh(input) - torch.tanh(target)) ** 2
+    x = x * mask
     x = x.sum() / mask.sum()
     return x
 
@@ -448,14 +448,14 @@ def get_notes_loss(input, target):
 
 def get_velocity_loss(input, target, mask):
     x = (target - input).abs()
-    x *= mask
+    x = x * mask
     return x.sum() / mask.sum()
 
 
 def get_accidentals_loss(input, target, mask):
     # x = nn.functional.binary_cross_entropy(input, target, reduction='none')
     x = (input - target).abs()
-    x *= mask.unsqueeze(-1)
+    x = x * mask.unsqueeze(-1)
     x = x.sum() / (mask.sum() * 3)
     return x
 
