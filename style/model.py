@@ -49,6 +49,7 @@ class PitchedChannelsEncoder(nn.Module):
         x1 = squash_dims(x, -2)  # (batch, channel, bar, beat, features)
 
         x = self.instruments_linear(instruments)  # (batch, channel, features)
+        x = F.leaky_relu(x)
         x2 = x.unsqueeze(2).unsqueeze(2)  # (batch, channel, bar, beat, features)
 
         x = x1 + x2  # (batch, channel, bar, beat, features)
@@ -133,12 +134,15 @@ class RhythmEncoder(nn.Module):
 
     def forward(self, channels, beats, bars):
         x = squash_dims(channels, -2)  # (batch, channel, bar, beat, beat_fraction, features)
-        x1 = self.channels_linear(x)  # (batch, channel, bar, beat, beat_fraction, features)
+        x = self.channels_linear(x)  # (batch, channel, bar, beat, beat_fraction, features)
+        x1 = F.leaky_relu(x)
 
         x = self.beats_linear(beats)  # (batch, channel, bar, beat, features)
+        x = F.leaky_relu(x)
         x2 = x.unsqueeze(4)  # (batch, channel, bar, beat, beat_fraction, features)
 
         x = self.bars_linear(bars)  # (batch, channel, bar, features)
+        x = F.leaky_relu(x)
         x3 = x.unsqueeze(3).unsqueeze(4)  # (batch, channel, bar, beat, beat_fraction, features)
 
         x = x1 + x2 + x3  # (batch, channel, bar, beat, beat_fraction, features)
@@ -176,12 +180,15 @@ class MelodyEncoder(nn.Module):
         # (batch, channel, bar, beat, beat_fraction, note_features, note)
         x = x.contiguous()
         x = squash_dims(x, 4, 6)  # (batch, channel, bar, beat, features, note)
-        x1 = self.beat_conv(x)  # (batch, channel, bar, beat, scale_degree, octave)
+        x = self.beat_conv(x)  # (batch, channel, bar, beat, scale_degree, octave)
+        x1 = F.leaky_relu(x)
 
         x = self.beats_linear(beats)  # (batch, channel, bar, beat, scale_degree)
+        x = F.leaky_relu(x)
         x2 = x.unsqueeze(-1)  # (batch, channel, bar, beat, scale_degree, octave)
 
         x = self.bars_linear(bars)  # (batch, channel, bar, scale_degree)
+        x = F.leaky_relu(x)
         x3 = x.unsqueeze(-1).unsqueeze(3)  # (batch, channel, bar, beat, scale_degree, octave)
 
         x = x1 + x2 + x3  # (batch, channel, bar, beat, scale_degree, octave)
@@ -193,6 +200,7 @@ class MelodyEncoder(nn.Module):
         # (batch, channel, bar, beat, beat_fraction, note, features)
         x = channels * x  # (batch, channel, bar, beat, beat_fraction, note, note_features)
         x = self.melody_linear(x)  # (batch, channel, bar, beat, beat_fraction, note, note_features)
+        x = F.leaky_relu(x)
         x = combine(x, dim=1)  # (batch, bar, beat, beat_fraction, note, note_features)
         return x
 
@@ -236,10 +244,12 @@ class PitchedStyleApplier(nn.Module):
 
     def forward(self, style, melody, rhythm, instruments):
         x = self.style_linear_degrees(style)  # (batch, features)
+        x = F.leaky_relu(x)
         x1 = x.view(x.size(0), 1, 1, 1, 10, 1, 7, -1)
         # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
 
         x = self.style_linear_octaves(style)  # (batch, features)
+        x = F.leaky_relu(x)
         x2 = x.view(x.size(0), 1, 1, 1, 10, 8, 1, -1)
         # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
 
@@ -250,6 +260,7 @@ class PitchedStyleApplier(nn.Module):
         # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
 
         x = self.instruments_linear(instruments)  # (batch, channel, features)
+        x = F.leaky_relu(x)
         x5 = x.view(*x.shape[:2], 1, 1, 1, 1, 1, -1)
         # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
 
@@ -281,6 +292,7 @@ class UnpitchedStyleApplier(nn.Module):
 
     def forward(self, style, rhythm):
         x = self.style_linear(style)  # (batch, features)
+        x = F.leaky_relu(x)
         x1 = x.view(x.size(0), 1, 1, 10, 47, -1)
         # (batch, bar, beat, beat_fraction, note, features)
 
