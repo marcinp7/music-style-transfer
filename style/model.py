@@ -6,7 +6,7 @@ from style.utils.pytorch import Distributed, squash_dims, LSTM
 
 
 class PitchedChannelsEncoder(nn.Module):
-    def __init__(self, instrument_size=4, n_conv_channels=50, beat_size=16, bar_size=32):
+    def __init__(self, instrument_size, n_conv_channels=50, beat_size=16, bar_size=32):
         super().__init__()
         self.instruments_linear = nn.Linear(
             in_features=instrument_size,
@@ -215,7 +215,7 @@ def accidentals_activation(x):
 
 
 class PitchedStyleApplier(nn.Module):
-    def __init__(self, melody_size=32, instrument_size=4):
+    def __init__(self, instrument_size, melody_size=32):
         super().__init__()
         self.style_linear_degrees = nn.Linear(
             in_features=100,
