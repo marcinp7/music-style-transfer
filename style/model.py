@@ -413,15 +413,14 @@ def get_duration_loss(input, target, mask):
     return x
 
 
-def get_smooth_f1_score(target, error, safe=True):
-    positive = target
-    negative = 1. - positive
+def get_smooth_f1_score(input, target, safe=True):
+    # false_positive = torch.relu(input - target)
+    # false_negative = torch.relu(target - input)
+    # true_positive = torch.relu(target + input - 1)
 
-    false_positive = error * negative
-    false_negative = error * positive
-
-    true_positive = (1. - error) * positive
-    # true_negative = (1. - error) * negative
+    false_positive = input * (1 - target)
+    false_negative = (1 - input) * target
+    true_positive = input * target
 
     TP = true_positive.sum()
     FP = false_positive.sum()
@@ -441,8 +440,7 @@ def get_smooth_f1_score(target, error, safe=True):
 
 
 def get_notes_loss(input, target):
-    error = (target - input).abs()
-    f1_score = get_smooth_f1_score(target, error)[0]
+    f1_score = get_smooth_f1_score(input, target)[0]
     return 1. - f1_score
 
 
