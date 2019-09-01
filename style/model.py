@@ -223,7 +223,7 @@ def accidentals_activation(x):
 
 
 class PitchedStyleApplier(nn.Module):
-    def __init__(self, instrument_size, melody_size=32):
+    def __init__(self, instrument_size, melody_size, rhythm_size):
         super().__init__()
         self.style_linear_degrees = nn.Linear(
             in_features=100,
@@ -235,6 +235,10 @@ class PitchedStyleApplier(nn.Module):
         )
         self.instruments_linear = nn.Linear(
             in_features=instrument_size,
+            out_features=melody_size,
+        )
+        self.rhythm_linear = nn.Linear(
+            in_features=rhythm_size,
             out_features=melody_size,
         )
         self.linear = nn.Linear(
@@ -256,7 +260,10 @@ class PitchedStyleApplier(nn.Module):
         x3 = melody.view(*melody.shape[:4], 8, 7, -1)
         # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
 
-        x4 = rhythm.view(rhythm.shape[0], 1, *rhythm.shape[1:4], 1, 1, -1)
+        x = self.rhythm_linear(rhythm)
+        # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
+        x = F.leaky_relu(x)
+        x4 = x.view(x.shape[0], 1, *x.shape[1:4], 1, 1, -1)
         # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
 
         x = self.instruments_linear(instruments)  # (batch, channel, features)
