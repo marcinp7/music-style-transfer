@@ -421,12 +421,10 @@ def get_duration_loss(input, target, mask):
 
 
 def get_smooth_f1_score(input, target, safe=True):
-    # false_positive = torch.relu(input - target)
-    # false_negative = torch.relu(target - input)
-    # true_positive = torch.relu(target + input - 1)
+    false_positive = torch.relu(input - target)
+    false_negative = torch.relu(target - input)
 
-    false_positive = input * (1 - target)
-    false_negative = (1 - input) * target
+    # true_positive = torch.relu(target + input - 1)
     true_positive = input * target
 
     TP = true_positive.sum()
@@ -468,6 +466,8 @@ def get_accidentals_loss(input, target, mask):
 def get_losses(input, target):
     target_velocity = get_velocity(target)
     mask = (target_velocity > 0.).float()
+    if mask.sum() == 0:
+        return torch.tensor(0., requires_grad=True)
 
     velocity = get_velocity(input)
     notes_loss = get_notes_loss(velocity, target_velocity)
