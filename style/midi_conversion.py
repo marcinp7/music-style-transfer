@@ -115,19 +115,16 @@ def get_midi_info(global_messages, channels, ticks_per_beat):
     tempo2total_time = defaultdict(int)
 
     channels_messages = flatten(channels)
-    notes_on = filter(lambda x: x.type == 'note_on', channels_messages)
-    notes_off = filter(lambda x: x.type == 'note_off', channels_messages)
+    notes_on = filter(lambda x: x.type == 'note_on' and x.velocity > 0, channels_messages)
     note_on_times = [n.time for n in notes_on]
-    note_off_times = [n.time for n in notes_off]
     first_note_time, last_note_time = min(note_on_times), max(note_on_times)
-    duration = max(note_on_times + note_off_times)
+    last_message_time = max(m.time for m in channels_messages)
 
     def is_during_song(time):
         return first_note_time <= time <= last_note_time
 
     info = {
         'ticks_per_beat': ticks_per_beat,
-        'duration': duration,
         'time_signature': {
             'numerator': 4,
             'denominator': 4,
@@ -162,6 +159,13 @@ def get_midi_info(global_messages, channels, ticks_per_beat):
             raise MidiFormatError(f"Unknown message type: {msg.type}")
 
     info['ticks_per_bar'] = int(ticks_per_beat * info['time_signature']['numerator'])
+
+    if last_message_time - last_note_time > info['ticks_per_bar']:
+        duration = last_note_time + info['ticks_per_bar']
+    else:
+        duration = last_message_time
+    info['duration'] = duration
+
     info['n_bars'] = duration / info['ticks_per_bar']
     info['n_beats'] = info['time_signature']['numerator']
 
