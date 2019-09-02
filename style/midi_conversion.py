@@ -28,20 +28,6 @@ from style.scales import (
 from style.exceptions import MidiFormatError
 
 
-def merge_channels(channels):
-    merged_channel = copy(channels[0])
-    merged_channel['messages'] = []
-    channel_idx = merged_channel['index']
-    for channel in channels:
-        for msg in channel['messages']:
-            msg = copy(msg)
-            msg.channel = channel_idx
-            merged_channel['messages'].append(msg)
-    merged_channel['messages'] = sorted(
-        merged_channel['messages'], key=lambda x: x.time)
-    return merged_channel
-
-
 def get_channel_info(channel):
     channel_info = {k: v for k, v in channel.items() if k != 'messages'}
     channel_info['pitched'] = is_pitched(channel_info['instrument_id'])
@@ -617,10 +603,3 @@ class ChannelConverter:
             raise ValueError()
         note_idx -= self.min_percussion
         return note_idx
-
-
-def merge_channels_by_instrument(channels):
-    channels_grouped = group_by(
-        channels, 'instrument_name', func=merge_channels)
-    channels_grouped = list(channels_grouped.values())
-    return channels_grouped
