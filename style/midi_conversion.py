@@ -175,7 +175,7 @@ def get_midi_info(global_messages, channels, ticks_per_beat):
         elif msg.type not in known_messages:
             raise MidiFormatError(f"Unknown message type: {msg.type}")
 
-    info['ticks_per_bar'] = int(ticks_per_beat * 4 * info['time_signature']['value'])
+    info['ticks_per_bar'] = int(ticks_per_beat * info['time_signature']['numerator'])
     info['n_bars'] = duration / info['ticks_per_bar']
     info['n_beats'] = info['time_signature']['numerator']
 
@@ -499,7 +499,8 @@ class ChannelConverter:
 
     def qchannel2vchannel(self, qchannel):
         pitched = is_pitched(qchannel['instrument_id'])
-        bars = [self.get_empty_bar(pitched) for _ in range(self.n_bars)]
+        # quantization may create a new bar at the end
+        bars = [self.get_empty_bar(pitched) for _ in range(self.n_bars+1)]
         for note in qchannel['notes']:
             try:
                 note_idx = self.note2idx(note, pitched)
