@@ -49,10 +49,15 @@ def merge_tracks(tracks, apply_global_timing=False):
     return list(msgs)
 
 
+max_msg_time = 1e7
+
+
 def split_channels(mid):
     global_messages = []
     channels = defaultdict(list)
     for msg in merge_tracks(mid.tracks, apply_global_timing=True):
+        if msg.time > max_msg_time:
+            continue
         if hasattr(msg, 'channel'):
             channels[msg.channel].append(msg)
         else:
@@ -118,7 +123,7 @@ def get_midi_info(global_messages, channels, ticks_per_beat):
     notes_on = filter(lambda x: x.type == 'note_on' and x.velocity > 0, channels_messages)
     note_on_times = [n.time for n in notes_on]
     first_note_time, last_note_time = min(note_on_times), max(note_on_times)
-    last_message_time = max(m.time for m in channels_messages)
+    duration = max(m.time for m in channels_messages)
 
     def is_during_song(time):
         return first_note_time <= time <= last_note_time
@@ -131,6 +136,7 @@ def get_midi_info(global_messages, channels, ticks_per_beat):
             'value': 1.,
         },
         'key': None,
+        'duration': duration,
     }
 
     for msg in global_messages:
@@ -159,12 +165,6 @@ def get_midi_info(global_messages, channels, ticks_per_beat):
             raise MidiFormatError(f"Unknown message type: {msg.type}")
 
     info['ticks_per_bar'] = int(ticks_per_beat * info['time_signature']['numerator'])
-
-    if last_message_time - last_note_time > info['ticks_per_bar']:
-        duration = last_note_time + info['ticks_per_bar']
-    else:
-        duration = last_message_time
-    info['duration'] = duration
 
     info['n_bars'] = duration / info['ticks_per_bar']
     info['n_beats'] = info['time_signature']['numerator']

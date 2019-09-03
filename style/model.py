@@ -466,8 +466,6 @@ def get_accidentals_loss(input, target, mask):
 def get_losses(input, target):
     target_velocity = get_velocity(target)
     mask = (target_velocity > 0.).float()
-    if mask.sum() == 0:
-        return (0.,) * 4
 
     velocity = get_velocity(input)
     notes_loss = get_notes_loss(velocity, target_velocity)
