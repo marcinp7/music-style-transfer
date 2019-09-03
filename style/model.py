@@ -421,23 +421,24 @@ def get_duration_loss(input, target, mask):
 
 
 def get_smooth_f1_score(input, target, safe=True):
+    true_positive = torch.min(input, target)
     false_positive = torch.relu(input - target)
     false_negative = torch.relu(target - input)
-
-    # true_positive = torch.relu(target + input - 1)
-    true_positive = input * target
 
     TP = true_positive.sum()
     FP = false_positive.sum()
     FN = false_negative.sum()
 
-    if safe and TP == 0 and FP == 0.:
-        precision = TP / (1. + TP + FP)
+    if safe and TP == 0 and FP == 0:
+        precision = TP / (1 + TP + FP)
     else:
         precision = TP / (TP + FP)
-    recall = TP / (TP + FN)
+    if safe and TP == 0 and FN == 0:
+        recall = TP / (1 + TP + FN)
+    else:
+        recall = TP / (TP + FN)
 
-    if precision == 0 and recall == 0:
+    if safe and precision == 0 and recall == 0:
         f1_score = 2 * precision * recall / (1 + precision + recall)
     else:
         f1_score = 2 * precision * recall / (precision + recall)
