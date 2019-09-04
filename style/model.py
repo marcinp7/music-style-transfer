@@ -101,11 +101,11 @@ class UnpitchedChannelsEncoder(nn.Module):
 
 
 class StyleEncoder(nn.Module):
-    def __init__(self, input_size=64, hidden_size=100):
+    def __init__(self, input_size=64, style_size=100):
         super().__init__()
         self.lstm = LSTM(
             input_size=input_size,
-            hidden_size=hidden_size,
+            hidden_size=style_size,
             num_layers=1,
             batch_first=True,
         )
@@ -225,14 +225,14 @@ def accidentals_activation(x):
 
 
 class PitchedStyleApplier(nn.Module):
-    def __init__(self, instrument_size, melody_size, rhythm_size):
+    def __init__(self, instrument_size, style_size, melody_size, rhythm_size):
         super().__init__()
         self.style_linear_degrees = nn.Linear(
-            in_features=100,
+            in_features=style_size,
             out_features=10*7*melody_size,
         )
         self.style_linear_octaves = nn.Linear(
-            in_features=100,
+            in_features=style_size,
             out_features=10*8*melody_size,
         )
         self.instruments_linear = nn.Linear(
@@ -288,10 +288,10 @@ class PitchedStyleApplier(nn.Module):
 
 
 class UnpitchedStyleApplier(nn.Module):
-    def __init__(self, rhythm_size=32):
+    def __init__(self, style_size, rhythm_size):
         super().__init__()
         self.style_linear = nn.Linear(
-            in_features=100,
+            in_features=style_size,
             out_features=10*47*rhythm_size,
         )
         self.linear = nn.Linear(
@@ -321,10 +321,24 @@ class UnpitchedStyleApplier(nn.Module):
         return x
 
 
+class InstrumentsClassifier(nn.Module):
+    def __init__(self, n_instruments, style_size):
+        super().__init__()
+        self.linear = nn.Linear(
+            in_features=style_size,
+            out_features=n_instruments,
+        )
+
+    def forward(self, style):
+        x = self.linear(style)
+        x = torch.sigmoid(x)
+        return x
+
+
 class StyleTransferModel(nn.Module):
     def __init__(self, pitched_channels_encoder, unpitched_channels_encoder, style_encoder,
                  melody_encoder, pitched_rhythm_encoder, unpitched_rhythm_encoder,
-                 pitched_style_applier, unpitched_style_applier):
+                 pitched_style_applier, unpitched_style_applier, instruments_classifier):
         super().__init__()
         self.pitched_channels_encoder = pitched_channels_encoder
         self.unpitched_channels_encoder = unpitched_channels_encoder
@@ -338,8 +352,11 @@ class StyleTransferModel(nn.Module):
         self.pitched_style_applier = pitched_style_applier
         self.unpitched_style_applier = unpitched_style_applier
 
-    def forward(self, pitched_channels, instruments, unpitched_channels=None):
-        pitched_beats, pitched_bars = self.pitched_channels_encoder(pitched_channels, instruments)
+        self.instruments_classifier = instruments_classifier
+
+    def forward(self, pitched_channels, instruments_features, unpitched_channels=None):
+        pitched_beats, pitched_bars = self.pitched_channels_encoder(pitched_channels,
+                                                                    instruments_features)
         pitched_rhythm = self.pitched_rhythm_encoder(pitched_channels, pitched_beats, pitched_bars)
 
         if unpitched_channels is None:
@@ -356,12 +373,14 @@ class StyleTransferModel(nn.Module):
         style = self.style_encoder(bars)
         melody = self.melody_encoder(pitched_channels, pitched_beats, pitched_bars)
 
-        x_pitched = self.pitched_style_applier(style, melody, rhythm, instruments)
+        x_pitched = self.pitched_style_applier(style, melody, rhythm, instruments_features)
         if unpitched_channels is None:
             x_unpitched = None
         else:
             x_unpitched = self.unpitched_style_applier(style, rhythm)
-        return x_pitched, x_unpitched
+
+        instruments_pred = self.instruments_classifier(style)
+        return instruments_pred, x_pitched, x_unpitched
 
 
 def combine(*tensors, dim=None, safe=True):
@@ -459,14 +478,21 @@ def get_velocity_loss(input, target, mask):
 
 
 def get_accidentals_loss(input, target, mask):
-    # x = nn.functional.binary_cross_entropy(input, target, reduction='none')
-    x = (input - target).abs()
+    x = nn.functional.binary_cross_entropy(input, target, reduction='none')
+    x = torch.tanh(x)
+    # x = (input - target).abs()
     x = x * mask.unsqueeze(-1)
     x = x.sum() / (mask.sum() * 3)
     return x
 
 
-def get_losses(input, target):
+def get_instruments_loss(input, target):
+    x = nn.functional.binary_cross_entropy(input, target)
+    # x = torch.tanh(x)
+    return x
+
+
+def get_channels_losses(input, target):
     target_velocity = get_velocity(target)
     mask = (target_velocity > 0).float()
 
