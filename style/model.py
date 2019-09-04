@@ -4,6 +4,8 @@ import torch.nn.functional as F
 
 from style.utils.pytorch import Distributed, squash_dims, LSTM
 
+epsilon = 1e-7
+
 
 class PitchedChannelsEncoder(nn.Module):
     def __init__(self, instrument_size, n_conv_channels=50, beat_size=16, bar_size=32):
@@ -420,7 +422,16 @@ def get_duration_loss(input, target, mask):
     return x
 
 
-def get_smooth_f1_score(input, target, safe=True):
+def safe_div(numerator, denominator):
+    if denominator.abs() < epsilon:
+        if denominator < 0:
+            denominator = denominator - epsilon
+        else:
+            denominator = denominator + epsilon
+    return numerator / denominator
+
+
+def get_smooth_f1_score(input, target):
     true_positive = torch.min(input, target)
     false_positive = torch.relu(input - target)
     false_negative = torch.relu(target - input)
@@ -429,19 +440,10 @@ def get_smooth_f1_score(input, target, safe=True):
     FP = false_positive.sum()
     FN = false_negative.sum()
 
-    if safe and TP == 0 and FP == 0:
-        precision = TP / (1 + TP + FP)
-    else:
-        precision = TP / (TP + FP)
-    if safe and TP == 0 and FN == 0:
-        recall = TP / (1 + TP + FN)
-    else:
-        recall = TP / (TP + FN)
+    precision = safe_div(TP, TP + FP)
+    recall = safe_div(TP, TP + FN)
+    f1_score = safe_div(2 * precision * recall, precision + recall)
 
-    if safe and precision == 0 and recall == 0:
-        f1_score = 2 * precision * recall / (1 + precision + recall)
-    else:
-        f1_score = 2 * precision * recall / (precision + recall)
     return f1_score, precision, recall
 
 
@@ -466,12 +468,11 @@ def get_accidentals_loss(input, target, mask):
 
 def get_losses(input, target):
     target_velocity = get_velocity(target)
-    mask = (target_velocity > 0.).float()
+    mask = (target_velocity > 0).float()
 
     velocity = get_velocity(input)
     notes_loss = get_notes_loss(velocity, target_velocity)
     velocity_loss = get_velocity_loss(velocity, target_velocity, mask)
-
     duration_loss = get_duration_loss(get_duration(input), get_duration(target), mask)
     accidentals_loss = get_accidentals_loss(get_accidentals(input), get_accidentals(target), mask)
     return notes_loss, velocity_loss, duration_loss, accidentals_loss
