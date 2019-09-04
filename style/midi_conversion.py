@@ -216,20 +216,20 @@ def group_channel_messages(channel_messages, channel_id):
 def read_midi(mid):
     global_messages, channels_messages = split_channels(mid)
     info = get_midi_info(global_messages, channels_messages, mid.ticks_per_beat)
-    instruments = []
+    channels = []
     for channel_messages in channels_messages:
         channel_id = channel_messages[0].channel
         grouped_messages = group_channel_messages(channel_messages, channel_id)
         for instrument_id, messages in grouped_messages.items():
             if any(msg.type == 'note_on' for msg in messages):
-                instruments.append({
+                channels.append({
                     'channel_id': channel_id,
                     'instrument_id': instrument_id,
                     'instrument_name': program2instrument[instrument_id],
                     'messages': messages,
                 })
 
-    return instruments, info
+    return channels, info
 
 
 degree2accidental = {
