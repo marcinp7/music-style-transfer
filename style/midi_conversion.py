@@ -196,10 +196,10 @@ def group_channel_messages(channel_messages, channel_id):
         elif msg.type == 'control_change' and msg.control == 7:
             volume = msg.value
         elif msg.type in ['note_on', 'note_off']:
-            message_type = 'note_off' if msg.type == 'note_on' and msg.velocity == 0 else msg.type
             velocity = msg.velocity * volume / (max_velocity * max_volume)
+            message_type = 'note_off' if velocity == 0 else msg.type
             if message_type == 'note_on':
-                assert 0 <= velocity <= 1, velocity
+                assert 0 < velocity <= 1, msg.velocity
             instrument_id2messages[instrument_id].append(NoteMessage(
                 type=message_type,
                 note=msg.note,
