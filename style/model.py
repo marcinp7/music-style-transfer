@@ -365,9 +365,9 @@ class StyleTransferModel(nn.Module):
 
         self.instruments_classifier = instruments_classifier
 
-    def forward(self, pitched_channels, instruments_features, unpitched_channels=None):
-        pitched_beats, pitched_bars = self.pitched_channels_encoder(pitched_channels,
-                                                                    instruments_features)
+    def extract_style(self, pitched_channels, instruments_features, unpitched_channels=None):
+        pitched_beats, pitched_bars = self.pitched_channels_encoder(
+            pitched_channels, instruments_features)
         pitched_rhythm = self.pitched_rhythm_encoder(pitched_channels, pitched_beats, pitched_bars)
 
         if unpitched_channels is None:
@@ -375,8 +375,8 @@ class StyleTransferModel(nn.Module):
             rhythm = pitched_rhythm
         else:
             unpitched_beats, unpitched_bars = self.unpitched_channels_encoder(unpitched_channels)
-            unpitched_rhythm = self.unpitched_rhythm_encoder(unpitched_channels, unpitched_beats,
-                                                             unpitched_bars)
+            unpitched_rhythm = self.unpitched_rhythm_encoder(
+                unpitched_channels, unpitched_beats, unpitched_bars)
 
             bars = torch.cat([pitched_bars, unpitched_bars], 1)
             rhythm = combine(pitched_rhythm, unpitched_rhythm)
@@ -384,13 +384,23 @@ class StyleTransferModel(nn.Module):
         style = self.style_encoder(bars, instruments_features)
         melody = self.melody_encoder(pitched_channels, pitched_beats, pitched_bars)
 
-        x_pitched = self.pitched_style_applier(style, melody, rhythm, instruments_features)
-        if unpitched_channels is None:
-            x_unpitched = None
-        else:
-            x_unpitched = self.unpitched_style_applier(style, rhythm)
+        return style, melody, rhythm
 
+    def predict_instruments(self, style):
         instruments_pred = self.instruments_classifier(style)
+        return instruments_pred
+
+    def apply_style(self, style, melody, rhythm, instruments_features, unpitched=False):
+        x_pitched = self.pitched_style_applier(style, melody, rhythm, instruments_features)
+        x_unpitched = self.unpitched_style_applier(style, rhythm) if unpitched else None
+        return x_pitched, x_unpitched
+
+    def forward(self, pitched_channels, instruments_features, unpitched_channels=None):
+        style, melody, rhythm = self.extract_style(
+            pitched_channels, instruments_features, unpitched_channels)
+        instruments_pred = self.predict_instruments(style)
+        x_pitched, x_unpitched = self.apply_style(
+            style, melody, rhythm, instruments_features, unpitched_channels)
         return instruments_pred, x_pitched, x_unpitched
 
 
@@ -491,7 +501,6 @@ def get_velocity_loss(input, target, mask):
 def get_accidentals_loss(input, target, mask):
     x = nn.functional.binary_cross_entropy(input, target, reduction='none')
     x = torch.tanh(x)
-    # x = (input - target).abs()
     x = x * mask.unsqueeze(-1)
     x = x.sum() / (mask.sum() * 3)
     return x
@@ -499,7 +508,7 @@ def get_accidentals_loss(input, target, mask):
 
 def get_instruments_loss(input, target):
     x = nn.functional.binary_cross_entropy(input, target)
-    # x = torch.tanh(x)
+    x = torch.tanh(x)
     return x
 
 
