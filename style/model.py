@@ -38,9 +38,9 @@ class PitchedChannelsEncoder(nn.Module):
         )
         self.bars_lstm = Distributed(self.bars_lstm, depth=1)
 
-    def forward(self, channels, instruments):
+    def forward(self, channels, instruments_features):
         # channels: (batch, channel, bar, beat, beat_fraction, note, note_features)
-        # instruments: (batch, channel, features)
+        # instruments_features: (batch, channel, features)
 
         x = channels.transpose(-1, -2)
         # (batch, channel, bar, beat, beat_fraction, note_features, note)
@@ -50,7 +50,7 @@ class PitchedChannelsEncoder(nn.Module):
         x = F.leaky_relu(x)
         x1 = squash_dims(x, -2)  # (batch, channel, bar, beat, features)
 
-        x = self.instruments_linear(instruments)  # (batch, channel, features)
+        x = self.instruments_linear(instruments_features)  # (batch, channel, features)
         x = F.leaky_relu(x)
         x2 = x.unsqueeze(2).unsqueeze(2)  # (batch, channel, bar, beat, features)
 
@@ -101,7 +101,7 @@ class UnpitchedChannelsEncoder(nn.Module):
 
 
 class StyleEncoder(nn.Module):
-    def __init__(self, input_size=64, style_size=100):
+    def __init__(self, style_size, instrument_size, input_size=64):
         super().__init__()
         self.lstm = LSTM(
             input_size=input_size,
@@ -110,11 +110,22 @@ class StyleEncoder(nn.Module):
             batch_first=True,
         )
         self.lstm = Distributed(self.lstm, depth=1)
+        self.linear = nn.Linear(
+            in_features=instrument_size,
+            out_features=style_size,
+        )
 
-    def forward(self, bars):
+    def forward(self, bars, instruments_features):
         x = self.lstm(bars)[0]  # (batch, channel, bar, features)
         x = x[:, :, -1]  # (batch, channel, features)
-        x = combine(x, dim=1)  # (batch, features)
+        x1 = combine(x, dim=1)  # (batch, features)
+
+        x = self.linear(instruments_features)  # (batch, channel, features)
+        x = F.leaky_relu(x)
+        x2 = combine(x, dim=1)  # (batch, features)
+
+        x = x1 + x2  # (batch, features)
+        x = F.leaky_relu(x)
         return x
 
 
@@ -370,7 +381,7 @@ class StyleTransferModel(nn.Module):
             bars = torch.cat([pitched_bars, unpitched_bars], 1)
             rhythm = combine(pitched_rhythm, unpitched_rhythm)
 
-        style = self.style_encoder(bars)
+        style = self.style_encoder(bars, instruments_features)
         melody = self.melody_encoder(pitched_channels, pitched_beats, pitched_bars)
 
         x_pitched = self.pitched_style_applier(style, melody, rhythm, instruments_features)
