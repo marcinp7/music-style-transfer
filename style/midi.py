@@ -20,6 +20,50 @@ max_volume = 127
 max_velocity = 127
 
 
+popular_instruments = [
+    0,  # Acoustic Grand Piano
+    25,  # Acoustic Guitar (steel)
+    48,  # String Ensemble 1
+    33,  # Electric Bass (finger)
+    1,  # Bright Acoustic Piano
+    27,  # Electric Guitar (clean)
+    49,  # String Ensemble 2
+    29,  # Overdriven Guitar
+    35,  # Fretless Bass
+    30,  # Distortion Guitar
+    50,  # Synth Strings 1
+    24,  # Acoustic Guitar (nylon)
+    5,  # Electric Piano 2
+    4,  # Electric Piano 1
+    32,  # Acoustic Bass
+    52,  # Choir Aahs
+    26,  # Electric Guitar (jazz)
+    18,  # Rock Organ
+    28,  # Electric Guitar (muted)
+    89,  # Pad 2 (warm)
+    65,  # Alto Sax
+    53,  # Voice Oohs
+    61,  # Brass Section
+    2,  # Electric Grand Piano
+    17,  # Percussive Organ
+    73,  # Flute
+    54,  # Synth Choir
+    62,  # Synth Brass 1
+    16,  # Drawbar Organ
+    39,  # Synth Bass 2
+    34,  # Electric Bass (pick)
+    51,  # Synth Strings 2
+    90,  # Pad 3 (polysynth)
+    56,  # Trumpet
+    66,  # Tenor Sax
+    38,  # Synth Bass 1
+    11,  # Vibraphone
+    81,  # Lead 2 (sawtooth)
+    3,  # Honky-tonk Piano
+    57,  # Trombone
+]
+
+
 def parse_programs(path):
     program2instrument = {}
     program2group = {}
@@ -111,7 +155,8 @@ def create_midi(info, *instruments, max_delta_time=math.inf):
             ))
 
     messages = sorted(messages, key=lambda x: x.time)
-    messages.append(MetaMessage('end_of_track', time=info['duration']))
+    duration = info.get('duration', messages[-1].time + info['ticks_per_bar'])
+    messages.append(MetaMessage('end_of_track', time=duration))
 
     time = 0
     for msg in messages:
