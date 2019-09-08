@@ -101,4 +101,4 @@ ENV/
 /*.ipynb
 
 _cache/
-*.mid
+midi/*
