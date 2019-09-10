@@ -174,7 +174,7 @@ def get_midi_info(global_messages, channels, ticks_per_beat):
     info['tempo2time'] = tempo2total_time
 
     info['tempo'] = max(tempo2total_time.items(), key=lambda x: x[1])[0]
-    info['bpm'] = int(mido.tempo2bpm(info['tempo']))
+    info['bpm'] = round(mido.tempo2bpm(info['tempo']))
 
     return info
 
