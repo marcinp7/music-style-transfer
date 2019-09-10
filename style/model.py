@@ -332,24 +332,49 @@ class UnpitchedStyleApplier(nn.Module):
         return x
 
 
-class InstrumentsClassifier(nn.Module):
-    def __init__(self, n_instruments, style_size):
+class MusicInfoModel(nn.Module):
+    def __init__(self, n_instruments, style_size, rhythm_size):
         super().__init__()
-        self.linear = nn.Linear(
+        self.instruments_linear = nn.Linear(
             in_features=style_size,
             out_features=n_instruments,
         )
+        self.bpm_beats_lstm = LSTM(
+            input_size=rhythm_size*10,
+            hidden_size=8,
+            batch_first=True,
+        )
+        self.bpm_beats_lstm = Distributed(self.bpm_beats_lstm, depth=1)
+        self.bpm_bars_lstm = LSTM(
+            input_size=8,
+            hidden_size=4,
+            batch_first=True,
+        )
+        self.bpm_linear = nn.Linear(
+            in_features=4,
+            out_features=1,
+        )
 
-    def forward(self, style):
-        x = self.linear(style)
-        x = torch.sigmoid(x)
-        return x
+    def forward(self, style, rhythm):
+        # todo: use more features to predict instruments
+        x = self.instruments_linear(style)  # (batch, features)
+        instruments = torch.sigmoid(x)
+
+        x = squash_dims(rhythm, -2)  # (batch, bar, beat, features)
+        x = self.bpm_beats_lstm(x)[0]  # (batch, bar, beat, features)
+        x = x[:, :, -1]  # (batch, bar, features)
+        x = self.bpm_bars_lstm(x)[0]  # (batch, bar, features)
+        x = x[:, -1]  # (batch, features)
+        x = self.bpm_linear(x)[:, 0]  # (batch,)
+        bpm = torch.exp(x)
+
+        return instruments, bpm
 
 
 class StyleTransferModel(nn.Module):
     def __init__(self, pitched_channels_encoder, unpitched_channels_encoder, style_encoder,
                  melody_encoder, pitched_rhythm_encoder, unpitched_rhythm_encoder,
-                 pitched_style_applier, unpitched_style_applier, instruments_classifier):
+                 pitched_style_applier, unpitched_style_applier, music_info_model):
         super().__init__()
         self.pitched_channels_encoder = pitched_channels_encoder
         self.unpitched_channels_encoder = unpitched_channels_encoder
@@ -363,7 +388,7 @@ class StyleTransferModel(nn.Module):
         self.pitched_style_applier = pitched_style_applier
         self.unpitched_style_applier = unpitched_style_applier
 
-        self.instruments_classifier = instruments_classifier
+        self.music_info_model = music_info_model
 
     def extract_style(self, pitched_channels, instruments_features, unpitched_channels=None):
         pitched_beats, pitched_bars = self.pitched_channels_encoder(
@@ -386,9 +411,9 @@ class StyleTransferModel(nn.Module):
 
         return style, melody, rhythm
 
-    def predict_instruments(self, style):
-        instruments_pred = self.instruments_classifier(style)
-        return instruments_pred
+    def predict_music_info(self, style, rhythm):
+        instruments, bpm = self.music_info_model(style, rhythm)
+        return instruments, bpm
 
     def apply_style(self, style, melody, rhythm, instruments_features, unpitched=False):
         x_pitched = self.pitched_style_applier(style, melody, rhythm, instruments_features)
@@ -398,10 +423,10 @@ class StyleTransferModel(nn.Module):
     def forward(self, pitched_channels, instruments_features, unpitched_channels=None):
         style, melody, rhythm = self.extract_style(
             pitched_channels, instruments_features, unpitched_channels)
-        instruments_pred = self.predict_instruments(style)
+        instruments_pred, bpm_pred = self.predict_music_info(style, rhythm)
         x_pitched, x_unpitched = self.apply_style(
             style, melody, rhythm, instruments_features, unpitched_channels is not None)
-        return instruments_pred, x_pitched, x_unpitched
+        return (instruments_pred, bpm_pred), x_pitched, x_unpitched
 
 
 def combine(*tensors, dim=None, safe=True):
@@ -505,9 +530,13 @@ def get_accidentals_loss(input, target, mask):
     return x
 
 
-def get_instruments_loss(input, target):
-    x = nn.functional.binary_cross_entropy(input, target)
-    return x
+def get_music_info_loss(input, target):
+    input_instruments, input_bpm = input
+    target_instruments, target_bpm = target
+
+    instruments_loss = nn.functional.binary_cross_entropy(input_instruments, target_instruments)
+    bpm_loss = torch.log(input_bpm / target_bpm) ** 2
+    return instruments_loss, bpm_loss
 
 
 def get_channels_losses(input, target):
