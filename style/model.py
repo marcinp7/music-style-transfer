@@ -333,41 +333,74 @@ class UnpitchedStyleApplier(nn.Module):
 
 
 class MusicInfoModel(nn.Module):
-    def __init__(self, n_instruments, style_size, rhythm_size):
+    def __init__(self, n_instruments, style_size, rhythm_size, n_rhythm_features=4):
         super().__init__()
-        self.instruments_linear = nn.Linear(
-            in_features=style_size,
-            out_features=n_instruments,
-        )
-        self.bpm_beats_lstm = LSTM(
+        self.beats_lstm = LSTM(
             input_size=rhythm_size*10,
             hidden_size=8,
             batch_first=True,
         )
-        self.bpm_beats_lstm = Distributed(self.bpm_beats_lstm, depth=1)
-        self.bpm_bars_lstm = LSTM(
+        self.beats_lstm = Distributed(self.beats_lstm, depth=1)
+        self.bars_lstm = LSTM(
             input_size=8,
-            hidden_size=4,
+            hidden_size=n_rhythm_features,
             batch_first=True,
         )
-        self.bpm_linear = nn.Linear(
+
+        self.style_instruments_linear = nn.Linear(
+            in_features=style_size,
+            out_features=n_instruments,
+        )
+        self.rhythm_instruments_linear = nn.Linear(
             in_features=4,
+            out_features=n_instruments,
+        )
+
+        self.style_bpm_linear = nn.Linear(
+            in_features=style_size,
+            out_features=1,
+        )
+        self.rhythm_bpm_linear = nn.Linear(
+            in_features=n_rhythm_features,
             out_features=1,
         )
 
-    def forward(self, style, rhythm):
-        # todo: use more features to predict instruments
-        x = self.instruments_linear(style)  # (batch, features)
-        instruments = torch.sigmoid(x)
-
+    def get_rhythm_features(self, rhythm):
         x = squash_dims(rhythm, -2)  # (batch, bar, beat, features)
-        x = self.bpm_beats_lstm(x)[0]  # (batch, bar, beat, features)
+        x = self.beats_lstm(x)[0]  # (batch, bar, beat, features)
         x = x[:, :, -1]  # (batch, bar, features)
-        x = self.bpm_bars_lstm(x)[0]  # (batch, bar, features)
+        x = self.bars_lstm(x)[0]  # (batch, bar, features)
         x = x[:, -1]  # (batch, features)
-        x = self.bpm_linear(x)[:, 0]  # (batch,)
-        bpm = torch.exp(x)
+        return x
 
+    def predict_instruments(self, style, rhythm_features):
+        x = self.style_instruments_linear(style)  # (batch, features)
+        # x1 = F.leaky_relu(x)
+
+        # x = rhythm_features[:, :4]
+        # x = self.rhythm_instruments_linear(x)  # (batch, features)
+        # x2 = F.leaky_relu(x)
+
+        # x = x1 + x2  # (batch, features)
+        x = torch.sigmoid(x)
+        return x
+
+    def predict_bpm(self, style, rhythm_features):
+        # x = self.style_bpm_linear(style)  # (batch, features)
+        # x1 = F.leaky_relu(x)
+
+        x = self.rhythm_bpm_linear(rhythm_features)  # (batch, features)
+        # x2 = F.leaky_relu(x)
+
+        # x = x1 + x2  # (batch, features)
+        x = torch.exp(x)
+        x = x[:, 0]  # (batch,)
+        return x
+
+    def forward(self, style, rhythm):
+        rhythm_features = self.get_rhythm_features(rhythm)
+        instruments = self.predict_instruments(style, rhythm_features)
+        bpm = self.predict_bpm(style, rhythm_features)
         return instruments, bpm
 
 
