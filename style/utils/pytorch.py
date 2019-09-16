@@ -1,4 +1,6 @@
 import numpy as np
+
+import torch
 from torch import nn
 
 
@@ -47,3 +49,17 @@ class Distributed(nn.Module):
             return tuple(cls.view_tuple(t, *shape_head) for t in x)
         x = x.view(*shape_head, *x.shape[1:])
         return x
+
+
+def cat_with_broadcat(tensors, dim=0):
+    assert len(tensors)
+    assert all(len(t.shape) == len(tensors[0].shape) for t in tensors[1:])
+    shapes = np.array([t.shape for t in tensors])
+    target_shape = shapes.max(0)
+    expanded_tensors = []
+    for tensor in tensors:
+        target_shape[dim] = tensor.shape[dim]
+        x = tensor.expand(*target_shape)
+        expanded_tensors.append(x)
+    x = torch.cat(expanded_tensors, dim=dim)
+    return x
