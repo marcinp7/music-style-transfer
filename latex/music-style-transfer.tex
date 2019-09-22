@@ -1,17 +1,3 @@
-%
-% Niniejszy plik stanowi przykład formatowania pracy magisterskiej na
-% Wydziale MIM UW.  Szkielet użytych poleceń można wykorzystywać do
-% woli, np. formatujac wlasna prace.
-%
-% Zawartosc merytoryczna stanowi oryginalnosiagniecie
-% naukowosciowe Marcina Wolinskiego.  Wszelkie prawa zastrzeżone.
-%
-% Copyright (c) 2001 by Marcin Woliński <M.Wolinski@gust.org.pl>
-% Poprawki spowodowane zmianami przepisów - Marcin Szczuka, 1.10.2004
-% Poprawki spowodowane zmianami przepisow i ujednolicenie 
-% - Seweryn Karłowicz, 05.05.2006
-% Dodanie wielu autorów i tłumaczenia na angielski - Kuba Pochrybniak, 29.11.2016
-
 % dodaj opcję [licencjacka] dla pracy licencjackiej
 % dodaj opcję [en] dla wersji angielskiej (mogą być obie: [licencjacka,en])
 \documentclass[en]{pracamgr}
@@ -82,47 +68,75 @@
 
 \chapter{Introduction}
 
-TODO
+Transfer of style between images is a well-known problem.
+Currently it can be realized between any two images by using convolutional neural networks.
+The analogous style transfer done for music is a much less explored topic and it's challenging even to define what exactly a musical style is.
 
-Differences between image and music style transfer. Music style transfer is much less explored.
+In this paper the goal is to define some sensible notion of musical style and create a model that can create a different arrangement for any song based on style extracted from any other song.
+The music used for training is assumed to be in MIDI format and can use any range of instruments.
+The instruments supported by the model must be set during training, but the supported styles do not -- we want the trained model to be able to extract style from any song.
 
 \chapter{Other works}
 
+There exist previous works doing music style transfer to some extent.
+A few examples are shortly described below.
+All of them, however, are performing a simpler kind of style transfer.
+
 \section{Neural Translation of Musical Style}
 
-TODO
-
-Neural Translation of Musical Style \cite{neural_translation} -- Only regression of dynamics (loudness), so it's just creating interpretation of a given piano piece, not creating the whole arrangement.
+In Neural Translation of Musical Style \cite{neural_translation} authors created a model than can learn to perform any given piano piece in either jazz or classical style.
+The model does this by regression of notes' velocities (loudness), so it's effectively creating an interpretation of a given piano piece.
+Therefore it's much simpler, because it only supports one instrument (piano) and cannot create a completely different arrangement.
 
 \section{Symbolic Music Genre Transfer with CycleGAN}
 
-TODO
-
-Symbolic Music Genre Transfer with CycleGAN \cite{cyclegan} uses different methods but still it's only regression of dynamics for piano.
+In Symbolic Music Genre Transfer with CycleGAN \cite{cyclegan} the described model can create new arrangements but it can still only generate piano and the styles need to be set during training (in this case it's jazz, classic and pop).
 
 \section{Play as You Like: Timbre-enhanced Multi-modal Music Style Transfer}
 
-TODO
-
-Timbre-enhanced Multi-modal Music Style Transfer \cite{multimodal} -- here the styles need to be set at the time of training (authors are using 3 styles: guitar, piano and string quartet) so it doesn't allow to transfer style between any two songs, like with image style transfer.
+In Timbre-enhanced Multi-modal Music Style Transfer \cite{multimodal} the model can operate on different instruments, but the styles still need to be set during training (the styles are actually instruments, the authors are using guitar, piano and string quartet).
+Like in the previous examples, it doesn't allow to transfer style between any two songs.
 
 \chapter{Results}
 
+\section{Musical style and composition}
+
+For musical style transfer, the two main notions concerning songs are composition and style.
+I start by giving a rough definition of them.
+
+Composition is any information about a song that is related to specific moment in time, e.g. if the music gets louder or some instrument starts playing.
+The most important part of composition is the melody (played by one or more instruments).
+
+The style, on the other hand, is information not related to any specific moment in time, e.g. the general mood of the song or the way specific instruments are used (for example, which instruments play the main melodic line and which ones create a backing).
+
+Since music is a form of art, even though it can be understood and formally described, it will always be at least partly subjective.
+This means that the exact way to split songs into composition and style is not unique (for example, used instruments may naturally be considered part of style, but they can also change in time).
+The main assumption, however, is that composition-style splitting can be performed in \emph{some} fashion which can be learned by a complex enough model.
+
+Since any song can be naturally interpreted as a time sequence, I will use a recurrent neural network as a model for splitting the input song into composition and style.
+Composition, just like the input, is a time series, but simpler, with less features.
+The style, on the other hand, is a single vector representing the whole song.
+During training, the model splits the input song into composition and style, and then combines them to recreate the original song.
+Because composition is much smaller than the input song, the model must include useful information in the style vector as well.
+
+After training, I can use the model to extract style from some song and combine it with the composition extracted from other song.
+The hypothesis is that this approach will allow for a sensible music style transfer.
+
+\section{Experimental results}
+
 TODO
 
-\chapter{Tools and frameworks}
+\chapter{Framework}
 
-TODO
+\section{Tools}
 
-PyTorch
+The whole project is implemented in Python.
+The machine learning framework I use is PyTorch, along with mido -- a Python library for working with MIDI files.
 
-mido - Python library for working with MIDI files
+\section{Data}
 
-\chapter{Data}
-
-TODO
-
-Lakh MIDI Dataset
+The dataset I use is Lakh MIDI Dataset\footnote{https://colinraffel.com/projects/lmd/}.
+It contains over 100,000 songs in MIDI format and covers various genres, including pop, rock or classical.
 
 \chapter{Data flow}
 
@@ -140,7 +154,8 @@ The input to the model:
 \item instruments: one-hot encoded instruments used in the song
 \item song: the song content (at least one pitched instrument and optionally percussion)
 \end{itemize}
-Model has to split the input song into composition and style. Style is simply a vector. Composition is melody and rhythm, described in more detail below.
+Model has to split the input song into composition and style.
+Style is simply a vector. Composition is melody and rhythm, described in more detail below.
 
 Input contains the song content: information which notes are played on each instrument in any moment in the song.
 
@@ -148,7 +163,9 @@ Melody should encode song content but with no information about specific instrum
 
 Rhythm is like melody but with no information about specific notes.
 
-Melody encodes all pitched instruments used in the song. Rhythm encodes all pitched instruments and percussion, if it's used. Melody and rhythm, along with the style vector, should enable to recreate all the instruments used in the song.
+Melody encodes all pitched instruments used in the song.
+Rhythm encodes all pitched instruments and percussion, if it's used.
+Melody and rhythm, along with the style vector, should enable to recreate all the instruments used in the song.
 
 \section{Predicting song info}
 
@@ -171,11 +188,13 @@ Given style vector, melody and rhythm, the model must reconstruct the original s
 
 TODO
 
-MIDI format: sequence of event (like "play that note"). MIDI has 16 channels, each one can be a different instrument.
+MIDI format: sequence of event (like "play that note").
+MIDI has 16 channels, each one can be a different instrument.
 
 The shape of the input song is (batch, channel, bar, beat, beat fraction, note, note features)
 
-where 'channel' refers to MIDI channel (an instrument). Dimensions 'bar', 'beat' and 'beat fraction' specify the exact moment in the song when the note is being played.
+where 'channel' refers to MIDI channel (an instrument).
+Dimensions 'bar', 'beat' and 'beat fraction' specify the exact moment in the song when the note is being played.
 
 Note features for pitched are:
 \begin{itemize}
@@ -187,17 +206,27 @@ For percussion -- only velocity and duration.
 
 I use note's span of 8 octaves, each with 12 sounds, which gives 96 possible notes in total.
 
-Typical way of encoding notes is to have each coordinate in a 'note' dimension correspond to specific note (so 'note' dimension would have length 96). However, this poses a problem for style transfer, because different set of notes is used depending on the mode of the song (major or minor). This means that the same song in a different mode would use different sounds in its melody (so melody representation would partially impose style).
+Typical way of encoding notes is to have each coordinate in a 'note' dimension correspond to specific note (so 'note' dimension would have length 96).
+However, this poses a problem for style transfer, because different set of notes is used depending on the mode of the song (major or minor).
+This means that the same song in a different mode would use different sounds in its melody (so melody representation would partially impose style).
 
-To remedy that, I encode the notes relative to the scale that the song is in. So note C in a song in C major would be encoded the same way as note A in a song in A minor. That way changing the scale will not affect melody representation.
+To remedy that, I encode the notes relative to the scale that the song is in.
+So note C in a song in C major would be encoded the same way as note A in a song in A minor.
+That way changing the scale will not affect melody representation.
 
-This way of encoding notes only allows to encode notes contained in the scale used (7 out of 12 notes in each octave). For example, if the song is in C major, we could only encode "white keys". To allow for encoding all remaining notes as well, each note has additional features (called accidentals) that can raise it or lower it one semitone. That way we can represent all 12 notes in each octave.
+This way of encoding notes only allows to encode notes contained in the scale used (7 out of 12 notes in each octave).
+For example, if the song is in C major, we could only encode "white keys".
+To allow for encoding all remaining notes as well, each note has additional features (called accidentals) that can raise it or lower it one semitone.
+That way we can represent all 12 notes in each octave.
 
-The downside of this solution is that I need to recognize the scale of the song, which is in itself not a trivial problem. I use fairly simple heuristics based on the Krumhansl-Schmuckler key-finding algorithm (http://rnhart.net/articles/key-finding/). They are predicting the scale of the song based on the frequency of notes used.
+The downside of this solution is that I need to recognize the scale of the song, which is in itself not a trivial problem.
+I use fairly simple heuristics based on the Krumhansl-Schmuckler key-finding algorithm (http://rnhart.net/articles/key-finding/).
+They are predicting the scale of the song based on the frequency of notes used.
 
 Melody shape: (batch, channel, bar, beat, beat fraction, note, features)
 
-Same as input shape but with no 'instrument' dimension. Also, it can have different number of features.
+Same as input shape but with no 'instrument' dimension.
+Also, it can have different number of features.
 
 Rhythm shape: (batch, channel, bar, beat, beat fraction, features)
 
@@ -205,9 +234,11 @@ Same as melody shape, but with no 'note' dimension.
 
 Style shape: (batch, features)
 
-Number of features in the melody should be low enough so that the model cannot simply remember all the instruments in the input. Instead, the model will need to learn some compressed high-level representation of the melody, from which it will be later able to reconstruct the input instruments (using the style vector).
+Number of features in the melody should be low enough so that the model cannot simply remember all the instruments in the input.
+Instead, the model will need to learn some compressed high-level representation of the melody, from which it will be later able to reconstruct the input instruments (using the style vector).
 
-Rhythm contains additional information about the melody (but not explicitly related to specific notes) and features of percussion if it is present in the input song. The main reason for introducing rhythm alongside melody is to be able to represent percussion (the only unpitched instrument) but at the same time do not force it if it's not present in the original song (the model should be able to add percussion to a song that originally didn't have it).
+Rhythm contains additional information about the melody (but not explicitly related to specific notes) and features of percussion if it is present in the input song.
+The main reason for introducing rhythm alongside melody is to be able to represent percussion (the only unpitched instrument) but at the same time do not force it if it's not present in the original song (the model should be able to add percussion to a song that originally didn't have it).
 
 \chapter{Model}
 
@@ -226,7 +257,8 @@ The loss function is a combination of various loss functions:
 
 TODO
 
-The model in each iteration is given one random song from the dataset. It needs to split it into composition and style, and then reconstruct the original song.
+The model in each iteration is given one random song from the dataset.
+It needs to split it into composition and style, and then reconstruct the original song.
 
 After training, the model is used to extract style and composition from two songs and then generate songs from these compositions but with switched styles.
 
