@@ -406,12 +406,16 @@ class MusicInfoModel(nn.Module):
             out_features=n_instruments,
         )
 
-        # self.style_bpm_linear = nn.Linear(
-        #     in_features=style_size,
-        #     out_features=1,
-        # )
+        self.style_bpm_linear = nn.Linear(
+            in_features=style_size,
+            out_features=2,
+        )
         self.rhythm_bpm_linear = nn.Linear(
             in_features=n_rhythm_features,
+            out_features=2,
+        )
+        self.bpm_linear = nn.Linear(
+            in_features=4,
             out_features=1,
         )
 
@@ -441,13 +445,14 @@ class MusicInfoModel(nn.Module):
         return x
 
     def predict_bpm(self, style, rhythm_features):
-        # x = self.style_bpm_linear(style)  # (batch, features)
-        # x1 = F.leaky_relu(x)
+        x = self.style_bpm_linear(style)  # (batch, features)
+        x1 = F.leaky_relu(x)
 
         x = self.rhythm_bpm_linear(rhythm_features)  # (batch, features)
-        # x2 = F.leaky_relu(x)
+        x2 = F.leaky_relu(x)
 
-        # x = x1 + x2  # (batch, features)
+        x = cat_with_broadcat([x1, x2], -1)  # (batch, features)
+        x = self.bpm_linear(x)  # (batch, features)
         x = torch.exp(x)
         x = x[:, 0]  # (batch,)
         return x
