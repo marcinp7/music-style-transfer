@@ -128,14 +128,14 @@ class StyleEncoder(nn.Module):
             in_features=instrument_size,
             out_features=32,
         )
+        self.mode_linear = nn.Linear(
+            in_features=2,
+            out_features=8,
+        )
         self.linear = nn.Linear(
-            in_features=32+style_size//2,
+            in_features=32+style_size//2+8,
             out_features=style_size,
         )
-        # self.mode_linear = nn.Linear(
-        #     in_features=2,
-        #     out_features=style_size,
-        # )
 
     def forward(self, bars, instruments_features, mode):
         x = self.lstm(bars)[0]  # (batch, channel, bar, features)
@@ -144,11 +144,12 @@ class StyleEncoder(nn.Module):
         x = self.instruments_linear(instruments_features)  # (batch, channel, features)
         x2 = F.leaky_relu(x)
 
-        # x = self.mode_linear(mode)  # (batch, features)
-        # x = F.leaky_relu(x)
-        # x3 = x.unsqueeze(1)  # (batch, channel, features)
+        # to remove?
+        x = self.mode_linear(mode)  # (batch, features)
+        x = F.leaky_relu(x)
+        x3 = x.unsqueeze(1)  # (batch, channel, features)
 
-        x = cat_with_broadcat([x1, x2], -1)  # (batch, channel, features)
+        x = cat_with_broadcat([x1, x2, x3], -1)  # (batch, channel, features)
         x = self.linear(x)  # (batch, channel, features)
         x = F.leaky_relu(x)
         x = combine(x, dim=1)  # (batch, features)
@@ -229,13 +230,6 @@ class MelodyEncoder(nn.Module):
         )
 
     def forward(self, channels, beats, bars, instruments):
-        # x = channels.transpose(-1, -2)
-        # # (batch, channel, bar, beat, beat_fraction, note_features, note)
-        # x = x.contiguous()
-        # x = squash_dims(x, 4, 6)  # (batch, channel, bar, beat, features, note)
-        # x = self.beat_conv(x)  # (batch, channel, bar, beat, scale_degree, octave)
-        # x1 = F.leaky_relu(x)
-
         # x = self.beats_linear(beats)  # (batch, channel, bar, beat, scale_degree)
         # x = F.leaky_relu(x)
         # x2 = x.unsqueeze(-1)  # (batch, channel, bar, beat, scale_degree, octave)
@@ -243,20 +237,6 @@ class MelodyEncoder(nn.Module):
         # x = self.bars_linear(bars)  # (batch, channel, bar, scale_degree)
         # x = F.leaky_relu(x)
         # x3 = x.unsqueeze(-1).unsqueeze(3)  # (batch, channel, bar, beat, scale_degree, octave)
-
-        # x = cat_with_broadcat([x1, x2, x3], -1)  # (batch, channel, bar, beat, scale_degree, octave)
-        # x = self.linear(x)
-        # x = F.leaky_relu(x)
-        # # octave must come before scale degree
-        # x = x.transpose(4, 5).contiguous()  # (batch, channel, bar, beat, octave, scale_degree)
-        # x = squash_dims(x, -2)  # (batch, channel, bar, beat, note)
-        # x = torch.sigmoid(x)
-        # x = x.unsqueeze(-1).unsqueeze(4)
-        # # (batch, channel, bar, beat, beat_fraction, note, features)
-        # x = channels * x  # (batch, channel, bar, beat, beat_fraction, note, note_features)
-        # x = self.melody_linear(x)  # (batch, channel, bar, beat, beat_fraction, note, note_features)
-        # x = F.leaky_relu(x)
-        # x = combine(x, dim=1)  # (batch, bar, beat, beat_fraction, note, note_features)
 
         x = self.melody_linear(channels)
         # (batch, channel, bar, beat, beat_fraction, note, features)
