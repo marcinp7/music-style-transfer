@@ -423,6 +423,14 @@ class MusicInfoModel(nn.Module):
             in_features=style_size,
             out_features=2,
         )
+        self.rhythm_mode_linear = nn.Linear(
+            in_features=n_rhythm_features,
+            out_features=2,
+        )
+        self.mode_linear = nn.Linear(
+            in_features=4,
+            out_features=2,
+        )
 
     def get_rhythm_features(self, rhythm):
         x = squash_dims(rhythm, -2)  # (batch, bar, beat, features)
@@ -453,12 +461,20 @@ class MusicInfoModel(nn.Module):
 
         x = cat_with_broadcat([x1, x2], -1)  # (batch, features)
         x = self.bpm_linear(x)  # (batch, features)
-        x = torch.exp(x)
         x = x[:, 0]  # (batch,)
+        x = torch.sigmoid(x)
+        x = x * 150 + 50
         return x
 
     def predict_mode(self, style, rhythm_features):
         x = self.style_mode_linear(style)  # (batch, features)
+        x1 = F.leaky_relu(x)
+
+        x = self.rhythm_mode_linear(rhythm_features)  # (batch, features)
+        x2 = F.leaky_relu(x)
+
+        x = cat_with_broadcat([x1, x2], -1)  # (batch, features)
+        x = self.mode_linear(x)
         return x
 
     def forward(self, style, rhythm):
@@ -635,7 +651,8 @@ def get_music_info_loss(input, target):
     target_instruments, target_bpm, target_mode = target
 
     instruments_loss = F.binary_cross_entropy(input_instruments, target_instruments)
-    bpm_loss = torch.log(input_bpm / target_bpm) ** 2
+    # bpm_loss = torch.log(input_bpm / target_bpm) ** 2
+    bpm_loss = ((input_bpm - target_bpm) / 150) ** 2
     mode_loss = F.cross_entropy(input_mode, target_mode.argmax(1))
     return instruments_loss, bpm_loss, mode_loss
 
