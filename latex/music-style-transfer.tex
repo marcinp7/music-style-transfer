@@ -97,7 +97,7 @@ In Symbolic Music Genre Transfer with CycleGAN \cite{cyclegan} the described mod
 In Timbre-enhanced Multi-modal Music Style Transfer \cite{multimodal} the model can operate on different instruments, but the styles still need to be set during training (the styles are actually instruments, the authors are using guitar, piano and string quartet).
 Like in the previous examples, it doesn't allow to transfer style between any two songs.
 
-\chapter{Results}
+\chapter{Overview and results}
 
 \section{Musical style and composition}
 
@@ -122,7 +122,7 @@ Because composition is much smaller than the input song, the model must include 
 After training, I can use the model to extract style from some song and combine it with the composition extracted from other song.
 The hypothesis is that this approach will allow for a sensible music style transfer.
 
-\section{Experimental results}
+\section{Results}
 
 TODO
 
@@ -140,105 +140,142 @@ It contains over 100,000 songs in MIDI format and covers various genres, includi
 
 \chapter{Data flow}
 
-TODO
-
-3 stages of data flow
+The data flow of the whole architecture is comprised of 3 stages: style extraction, predicting song information, and style applying.
 
 \section{Style extraction}
 
-TODO
-
-The input to the model:
+The input in the first stage is:
 \begin{itemize}
-\item mode: one-hot encoded mode of the song (major or minor)
-\item instruments: one-hot encoded instruments used in the song
-\item song: the song content (at least one pitched instrument and optionally percussion)
+\item instruments used in the song
+\item tempo
+\item mode of the song (major or minor)
+\item song content (information about which notes are played in any moment in time for any instrument used in the song)
 \end{itemize}
-Model has to split the input song into composition and style.
-Style is simply a vector. Composition is melody and rhythm, described in more detail below.
 
-Input contains the song content: information which notes are played on each instrument in any moment in the song.
+The output is comprised of 3 parts: melody, rhythm and style.
+I will refer to melody and rhythm as composition.
 
-Melody should encode song content but with no information about specific instruments (it must combine them).
+Melody should encode song content (like the input) but with no information about specific instruments (it must combine them).
+It encodes all pitched instruments used in the song.
 
-Rhythm is like melody but with no information about specific notes.
+Rhythm contains additional information about the melody (but not explicitly related to specific notes) and features of percussion if it is present in the input song.
+The main reason for introducing rhythm alongside melody is to be able to represent percussion (the only unpitched instrument) but at the same time do not force it if it's not present in the original song (the model should be able to add percussion to a song that originally didn't have it).
 
-Melody encodes all pitched instruments used in the song.
-Rhythm encodes all pitched instruments and percussion, if it's used.
-Melody and rhythm, along with the style vector, should enable to recreate all the instruments used in the song.
+I require that there is always at least one pitched instrument used in the song, while the percussion is optional.
+That way both melody and rhythm are always well-definied (there is at least one pitched instrument they can encode).
+
+Melody and rhythm, along with the style, should enable to recreate all the instruments used in the song.
 
 \section{Predicting song info}
 
-TODO
-
-Based on style and rhythm, the model must then predict basic information about a song:
+The input in this stage is style and rhythm.
+The output is basic information about a song (as in the first stage):
 \begin{itemize}
-\item mode (classification)
-\item tempo (regression)
 \item used instruments (classification)
+\item tempo (regression)
+\item mode (classification)
 \end{itemize}
+
+All those outputs should coincide with the respective inputs from the first stage.
 
 \section{Style applying}
 
-TODO
-
-Given style vector, melody and rhythm, the model must reconstruct the original song.
+At this stage the input are composition and style from the first stage.
+The output is the song content for each of the used instruments.
+Generated song content should conincide with the input from the first stage.
+In other words, the model must reconstruct the original song.
 
 \chapter{Data representation}
 
-TODO
+In MIDI format, the song is encoded as a sequence of events messages.
+Messages can contain instructions like setting the tempo or playing a note.
+Note events are assigned to one of the 16 channels -- each of those channels can represent a different instrument.
 
-MIDI format: sequence of event (like "play that note").
-MIDI has 16 channels, each one can be a different instrument.
+\section{MIDI encoding}
 
-The shape of the input song is (batch, channel, bar, beat, beat fraction, note, note features)
+The MIDI file is encoded as a tensor in the format:
+\begin{center}
+(\emph{batch, channel, bar, beat, beat fraction, note, note features}).
+\end{center}
 
-where 'channel' refers to MIDI channel (an instrument).
-Dimensions 'bar', 'beat' and 'beat fraction' specify the exact moment in the song when the note is being played.
+The \emph{channel} dimension refers to MIDI channel (an instrument).
+The \emph{bar}, \emph{beat} and \emph{beat fraction} dimensions point to the exact moment in the song when the note is being played.
 
-Note features for pitched are:
+\subsection{Specifying time}
+
+I assume that the time signature cannot change, so that the number of the beats is constant throughout the song (usually 3 or 4).
+The \emph{bar} and \emph{beat} dimensions denote in which bar and at which beat the note should play.
+The \emph{beat fraction} dimension is specifying the exact moment during the beat.
+
+I divide the beat into 8 parts, which gives 8 possible fractions: 0, 1/8, 2/8, ..., 7/8.
+Independently, I also divide the beat into 3 parts: 0, 1/3, 2/3.
+Combining it, symplifying and sorting, we get 10 different fractions:
+$$
+0, \frac{1}{8}, \frac{1}{4}, \frac{1}{3}, \frac{3}{8}, \frac{1}{2}, \frac{5}{8}, \frac{3}{4}, \frac{2}{3}, \frac{7}{8}.
+$$
+
+Each \emph{note fraction} coordinate represents one of those fractions.
+Including fractions with denominator 3 allows for the exact representation of triplets, which otherwise would need to be approximated using fractions with denominator 8.
+It's worth noting that because of that, those fractions are not equidistant, meaning that it's not justified to apply convolution along \emph{note fraction} dimension.
+However, the length of this dimension is not substantial, so it's not a big problem. More fractions could be added to allow for representing faster melodies, but these 10 are enough for most songs.
+
+\subsection{Note features}
+
+The above format is used for both percussion and pitched instruments.
+However, the number of notes and note features (lengths of dimensions \emph{note} and \emph{note features} respectively) is different for percussion than for pitched instruments, so 2 tensors must be used: one for pitched instruments and one (possibly empty) for percussion.
+
+Note features for pitched instruments are:
 \begin{itemize}
 \item velocity (loudness)
 \item duration
 \item accidentals (raise or lower the note one semitone)
 \end{itemize}
-For percussion -- only velocity and duration.
+
+For percussion the only note features are velocity and duration.
+
+\section{Notes' representation}
 
 I use note's span of 8 octaves, each with 12 sounds, which gives 96 possible notes in total.
+Typical way of encoding notes is to have each coordinate in a \emph{note} dimension correspond to a specific note (so \emph{note} dimension would have length 96).
+However, this way of encoding would pose a problem for style transfer.
+Namely, depending on the mode of the song (major or minor), a different set of notes is used.
+This means that the same song in a different mode would use different sounds in its melody.
+Hence, with the typical way of encoding notes, the melody representation would partially impose style, which is not desired, since we want to split them.
 
-Typical way of encoding notes is to have each coordinate in a 'note' dimension correspond to specific note (so 'note' dimension would have length 96).
-However, this poses a problem for style transfer, because different set of notes is used depending on the mode of the song (major or minor).
-This means that the same song in a different mode would use different sounds in its melody (so melody representation would partially impose style).
+To remedy that, I encode the notes relative to the scale the song is in.
+Effectively, what is encoded are not the actual notes, but rather the scale degrees they represent; so the note C in a song in C major would be encoded the same way as the note G in a song in G minor.
+That way changing the scale of the song will not affect the melody representation.
 
-To remedy that, I encode the notes relative to the scale that the song is in.
-So note C in a song in C major would be encoded the same way as note A in a song in A minor.
-That way changing the scale will not affect melody representation.
-
-This way of encoding notes only allows to encode notes contained in the scale used (7 out of 12 notes in each octave).
+This way of encoding only allows to encode notes contained in a given scale (which covers 7 out of 12 notes in each octave).
 For example, if the song is in C major, we could only encode "white keys".
-To allow for encoding all remaining notes as well, each note has additional features (called accidentals) that can raise it or lower it one semitone.
-That way we can represent all 12 notes in each octave.
+To allow for encoding all the remaining notes as well, each note has additional features (called accidentals) that can raise it or lower it one semitone.
+Then we can represent all 12 notes in each octave.
 
-The downside of this solution is that I need to recognize the scale of the song, which is in itself not a trivial problem.
-I use fairly simple heuristics based on the Krumhansl-Schmuckler key-finding algorithm (http://rnhart.net/articles/key-finding/).
-They are predicting the scale of the song based on the frequency of notes used.
+The downside of this solution is that it requires the scale of the song to be known -- and finding it is in itself not a trivial problem.
+I use fairly simple heuristics based on the Krumhansl-Schmuckler key-finding algorithm\footnote{http://rnhart.net/articles/key-finding/}, which predicts the scale of the song based on the frequency of notes used.
 
-Melody shape: (batch, channel, bar, beat, beat fraction, note, features)
+\section{Style and composition representation}
 
-Same as input shape but with no 'instrument' dimension.
-Also, it can have different number of features.
+Melody is a tensor of shape
+\begin{center}
+(\emph{batch, channel, bar, beat, beat fraction, note, features}),
+\end{center}
+which is the same as input shape but with no \emph{instrument} dimension.
+The number of note features may also be different.
 
-Rhythm shape: (batch, channel, bar, beat, beat fraction, features)
+Rhythm is a tensor of shape
+\begin{center}
+(\emph{batch, channel, bar, beat, beat fraction, features}).
+\end{center}
+It's also similar to the input but this time with no \emph{instrument} and no \emph{note} dimensions.
 
-Same as melody shape, but with no 'note' dimension.
-
-Style shape: (batch, features)
+Style is encoded as a regular vector, so it has shape
+\begin{center}
+(\emph{batch, features}).
+\end{center}
 
 Number of features in the melody should be low enough so that the model cannot simply remember all the instruments in the input.
-Instead, the model will need to learn some compressed high-level representation of the melody, from which it will be later able to reconstruct the input instruments (using the style vector).
-
-Rhythm contains additional information about the melody (but not explicitly related to specific notes) and features of percussion if it is present in the input song.
-The main reason for introducing rhythm alongside melody is to be able to represent percussion (the only unpitched instrument) but at the same time do not force it if it's not present in the original song (the model should be able to add percussion to a song that originally didn't have it).
+Instead, the model will need to learn some compressed high-level representation of the melody, from which it will later be able to reconstruct the input instruments, using the style vector.
 
 \chapter{Model}
 
