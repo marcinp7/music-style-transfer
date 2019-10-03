@@ -132,24 +132,32 @@ class StyleEncoder(nn.Module):
             in_features=2,
             out_features=8,
         )
+        self.bpm_linear = nn.Linear(
+            in_features=1,
+            out_features=8,
+        )
         self.linear = nn.Linear(
-            in_features=32+style_size//2+8,
+            in_features=32+style_size//2+8+8,
             out_features=style_size,
         )
 
-    def forward(self, bars, instruments_features, mode):
+    def forward(self, bars, instruments_features, mode, bpm):
         x = self.lstm(bars)[0]  # (batch, channel, bar, features)
         x1 = x[:, :, -1]  # (batch, channel, features)
 
         x = self.instruments_linear(instruments_features)  # (batch, channel, features)
         x2 = F.leaky_relu(x)
 
-        # to remove?
         x = self.mode_linear(mode)  # (batch, features)
         x = F.leaky_relu(x)
         x3 = x.unsqueeze(1)  # (batch, channel, features)
 
-        x = cat_with_broadcat([x1, x2, x3], -1)  # (batch, channel, features)
+        x = bpm.unsqueeze(-1)  # (batch, features)
+        x = self.bpm_linear(x)  # (batch, features)
+        x = F.leaky_relu(x)
+        x4 = x.unsqueeze(1)  # (batch, channel, features)
+
+        x = cat_with_broadcat([x1, x2, x3, x4], -1)  # (batch, channel, features)
         x = self.linear(x)  # (batch, channel, features)
         x = F.leaky_relu(x)
         x = combine(x, dim=1)  # (batch, features)
@@ -171,12 +179,16 @@ class RhythmEncoder(nn.Module):
             in_features=64,
             out_features=16,
         )
+        self.bpm_linear = nn.Linear(
+            in_features=1,
+            out_features=4,
+        )
         self.linear = nn.Linear(
-            in_features=16*3,
+            in_features=16*3+4,
             out_features=rhythm_size,
         )
 
-    def forward(self, channels, beats, bars):
+    def forward(self, channels, beats, bars, bpm):
         x = squash_dims(channels, -2)  # (batch, channel, bar, beat, beat_fraction, features)
         x = self.channels_linear(x)  # (batch, channel, bar, beat, beat_fraction, features)
         x1 = F.leaky_relu(x)
@@ -189,7 +201,13 @@ class RhythmEncoder(nn.Module):
         x = F.leaky_relu(x)
         x3 = x.unsqueeze(3).unsqueeze(4)  # (batch, channel, bar, beat, beat_fraction, features)
 
-        x = cat_with_broadcat([x1, x2, x3], -1)
+        x = bpm.unsqueeze(-1)  # (batch, features)
+        x = self.bpm_linear(x)  # (batch, features)
+        x = F.leaky_relu(x)
+        x4 = x.view(x.shape[0], 1, 1, 1, 1, x.shape[1])
+        # (batch, channel, bar, beat, beat_fraction, features)
+
+        x = cat_with_broadcat([x1, x2, x3, x4], -1)
         # (batch, channel, bar, beat, beat_fraction, features)
         x = self.linear(x)  # (batch, channel, bar, beat, beat_fraction, features)
         x = F.leaky_relu(x)
@@ -504,11 +522,12 @@ class StyleTransferModel(nn.Module):
 
         self.music_info_model = music_info_model
 
-    def extract_style(self, mode, pitched_channels, instruments_features, unpitched_channels=None):
+    def extract_style(self, mode, bpm, pitched_channels, instruments_features,
+                      unpitched_channels=None):
         pitched_beats, pitched_bars = self.pitched_channels_encoder(
             pitched_channels, instruments_features, mode)
         pitched_rhythm = self.pitched_rhythm_encoder(
-            pitched_channels, pitched_beats, pitched_bars)
+            pitched_channels, pitched_beats, pitched_bars, bpm)
         bars = pitched_bars
         if unpitched_channels is None:
             # bars = pitched_bars
@@ -516,12 +535,12 @@ class StyleTransferModel(nn.Module):
         else:
             unpitched_beats, unpitched_bars = self.unpitched_channels_encoder(unpitched_channels)
             unpitched_rhythm = self.unpitched_rhythm_encoder(
-                unpitched_channels, unpitched_beats, unpitched_bars)
+                unpitched_channels, unpitched_beats, unpitched_bars, bpm)
 
             # bars = torch.cat([pitched_bars, unpitched_bars], 1)
             rhythm = combine(pitched_rhythm, unpitched_rhythm)
 
-        style = self.style_encoder(bars, instruments_features, mode)
+        style = self.style_encoder(bars, instruments_features, mode, bpm)
         melody = self.melody_encoder(
             pitched_channels, pitched_beats, pitched_bars, instruments_features)
 
@@ -536,9 +555,9 @@ class StyleTransferModel(nn.Module):
         x_unpitched = self.unpitched_style_applier(style, rhythm) if unpitched else None
         return x_pitched, x_unpitched
 
-    def forward(self, mode, pitched_channels, instruments_features, unpitched_channels=None):
+    def forward(self, mode, bpm, pitched_channels, instruments_features, unpitched_channels=None):
         style, melody, rhythm = self.extract_style(
-            mode, pitched_channels, instruments_features, unpitched_channels)
+            mode, bpm, pitched_channels, instruments_features, unpitched_channels)
         instruments_pred, bpm_pred, mode_pred = self.predict_music_info(style, rhythm)
         x_pitched, x_unpitched = self.apply_style(
             style, melody, rhythm, instruments_features, unpitched_channels is not None)
@@ -652,7 +671,8 @@ def get_music_info_loss(input, target):
 
     instruments_loss = F.binary_cross_entropy(input_instruments, target_instruments)
     # bpm_loss = torch.log(input_bpm / target_bpm) ** 2
-    bpm_loss = ((input_bpm - target_bpm) / 150) ** 2
+    # bpm_loss = ((input_bpm - target_bpm) / 150) ** 2
+    bpm_loss = torch.abs(input_bpm - target_bpm) / 150
     mode_loss = F.cross_entropy(input_mode, target_mode.argmax(1))
     return instruments_loss, bpm_loss, mode_loss
 
