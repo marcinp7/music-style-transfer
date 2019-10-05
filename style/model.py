@@ -474,8 +474,8 @@ class MusicInfoModel(nn.Module):
         return instruments, bpm, mode
 
 
-def duration_activation(x):
-    x = torch.relu(x)
+def duration_activation(x, max_duration=6):
+    x = torch.sigmoid(x) * max_duration
     return x
 
 
