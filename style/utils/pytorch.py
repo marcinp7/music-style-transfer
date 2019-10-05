@@ -51,7 +51,7 @@ class Distributed(nn.Module):
         return x
 
 
-def cat_with_broadcat(tensors, dim=0):
+def cat_with_broadcast(tensors, dim=0):
     assert len(tensors)
     assert all(len(t.shape) == len(tensors[0].shape) for t in tensors[1:])
     shapes = np.array([t.shape for t in tensors])
