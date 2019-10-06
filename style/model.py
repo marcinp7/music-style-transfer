@@ -741,7 +741,7 @@ def get_accidentals(x):
 
 
 def get_duration_loss(input, target, mask):
-    x = (input - target) ** 2
+    x = ((input - target.clamp(max=6)) / 6) ** 2
     x = x * mask
     x = x.sum() / mask.sum()
     return x
