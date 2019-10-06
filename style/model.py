@@ -494,64 +494,82 @@ def accidentals_activation(x):
 class PitchedStyleApplier(nn.Module):
     def __init__(self, instrument_size, style_size, melody_size, rhythm_size):
         super().__init__()
-        # self.style_linear_degrees = nn.Linear(
-        #     in_features=style_size,
-        #     out_features=10*7*10,
-        # )
-        # self.style_linear_octaves = nn.Linear(
-        #     in_features=style_size,
-        #     out_features=10*8*10,
-        # )
         self.style_linear = nn.Linear(
             in_features=style_size,
             out_features=50,
-        )
-        self.instruments_linear = nn.Linear(
-            in_features=instrument_size,
-            out_features=10,
         )
         self.rhythm_linear = nn.Linear(
             in_features=rhythm_size,
             out_features=10,
         )
+        self.instruments_linear = nn.Linear(
+            in_features=instrument_size,
+            out_features=10,
+        )
+        linear_input_size = 50 + 10 + 10
+        linear_output_size = 32
+        self.octave_linear = nn.Linear(
+            in_features=linear_input_size,
+            out_features=linear_output_size*8,
+        )
+        self.scale_degree_linear = nn.Linear(
+            in_features=linear_input_size,
+            out_features=linear_output_size*7,
+        )
+        self.melody_linear = nn.Linear(
+            in_features=melody_size,
+            out_features=32,
+        )
         self.linear = nn.Linear(
-            in_features=50+10+10+melody_size,
+            in_features=linear_output_size+32,
             out_features=5,
         )
 
     def forward(self, style, melody, rhythm, instruments):
-        x1 = melody.view(melody.shape[0], 1, *melody.shape[1:4], 8, 7, -1)
-        # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
+        x = self.style_linear(style)  # (batch, features)
+        x = F.leaky_relu(x)
+        x1 = x.view(x.shape[0], 1, 1, 1, 1, -1)
+        # (batch, channel, bar, beat, beat_fraction, features)
 
         x = self.rhythm_linear(rhythm)
-        # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
+        # (batch, channel, bar, beat, beat_fraction, features)
         x = F.leaky_relu(x)
-        x2 = x.view(x.shape[0], 1, *x.shape[1:4], 1, 1, -1)
-        # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
+        x2 = x.view(x.shape[0], 1, *x.shape[1:4], -1)
+        # (batch, channel, bar, beat, beat_fraction, features)
 
         x = self.instruments_linear(instruments)  # (batch, channel, features)
         x = F.leaky_relu(x)
-        x3 = x.view(*x.shape[:2], 1, 1, 1, 1, 1, -1)
-        # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
+        x3 = x.view(*x.shape[:2], 1, 1, 1, -1)
+        # (batch, channel, bar, beat, beat_fraction, features)
 
-        x = self.style_linear(style)  # (batch, features)
+        y = cat_with_broadcast([x1, x2, x3], -1)
+        # (batch, channel, bar, beat, beat_fraction, features)
+
+        x = self.octave_linear(y)  # (batch, channel, bar, beat, beat_fraction, features)
+        x = x.view(*x.shape[:-1], 8, -1)
+        # (batch, channel, bar, beat, beat_fraction, octave, features)
         x = F.leaky_relu(x)
-        x4 = x.view(x.shape[0], 1, 1, 1, 1, 1, 1, -1)
+        x1 = x.unsqueeze(-2)
         # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
 
-        # x = self.style_linear_degrees(style)  # (batch, features)
-        # x = F.leaky_relu(x)
-        # x4 = x.view(x.size(0), 1, 1, 1, 10, 1, 7, -1)
-        # # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
-
-        # x = self.style_linear_octaves(style)  # (batch, features)
-        # x = F.leaky_relu(x)
-        # x5 = x.view(x.size(0), 1, 1, 1, 10, 8, 1, -1)
-        # # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
-
-        x = cat_with_broadcast([x1, x2, x3, x4], -1)
+        x = self.scale_degree_linear(y)  # (batch, channel, bar, beat, beat_fraction, features)
+        x = x.view(*x.shape[:-1], 7, -1)
+        # (batch, channel, bar, beat, beat_fraction, scale_degree, features)
+        x = F.leaky_relu(x)
+        x2 = x.unsqueeze(-3)
         # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
-        x = squash_dims(x, 5, 7)  # (batch, channel, bar, beat, beat_fraction, note, features)
+
+        x = x1 + x2  # (batch, channel, bar, beat, beat_fraction, octave, scale_degree, features)
+        x = F.leaky_relu(x)
+        x1 = squash_dims(x, 5, 7)  # (batch, channel, bar, beat, beat_fraction, note, features)
+
+        x = self.melody_linear(melody)
+        x = F.leaky_relu(x)
+        x2 = x.view(x.shape[0], 1, *x.shape[1:5], -1)
+        # (batch, channel, bar, beat, beat_fraction, note, features)
+
+        x = cat_with_broadcast([x1, x2], -1)
+        # (batch, channel, bar, beat, beat_fraction, note, features)
         x = self.linear(x)  # (batch, channel, bar, beat, beat_fraction, note, note_features)
 
         duration = duration_activation(x[:, :, :, :, :, :, :1])
@@ -566,25 +584,36 @@ class UnpitchedStyleApplier(nn.Module):
     def __init__(self, style_size, rhythm_size, n_unpitched_notes=47):
         super().__init__()
         self.n_unpitched_notes = n_unpitched_notes
-        self.linear = nn.Linear(
-            in_features=rhythm_size+50,
-            out_features=2,
-        )
         self.style_linear = nn.Linear(
             in_features=style_size,
-            out_features=10*n_unpitched_notes*50,
+            out_features=10*32,
+        )
+        self.rhythm_linear = nn.Linear(
+            in_features=rhythm_size,
+            out_features=32,
+        )
+        self.note_linear = nn.Linear(
+            in_features=32+32,
+            out_features=n_unpitched_notes*8,
+        )
+        self.linear = nn.Linear(
+            in_features=8,
+            out_features=2,
         )
 
     def forward(self, style, rhythm):
-        x1 = rhythm.view(*rhythm.shape[:4], 1, -1)
-        # (batch, bar, beat, beat_fraction, note, features)
-
         x = self.style_linear(style)  # (batch, features)
         x = F.leaky_relu(x)
-        x2 = x.view(x.shape[0], 1, 1, 10, self.n_unpitched_notes, -1)
-        # (batch, bar, beat, beat_fraction, note, features)
+        x1 = x.view(x.shape[0], 1, 1, 10, -1)
+        # (batch, bar, beat, beat_fraction, features)
 
-        x = cat_with_broadcast([x1, x2], -1)
+        x = self.rhythm_linear(rhythm)  # (batch, bar, beat, beat_fraction, features)
+        x2 = F.leaky_relu(x)
+
+        x = cat_with_broadcast([x1, x2], -1) # (batch, bar, beat, beat_fraction, features)
+        x = self.note_linear(x)
+        x = F.leaky_relu(x)
+        x = x.view(*x.shape[:4], self.n_unpitched_notes, -1)
         # (batch, bar, beat, beat_fraction, note, features)
         x = self.linear(x)  # (batch, bar, beat, beat_fraction, note, note_features)
 
