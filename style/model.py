@@ -756,7 +756,7 @@ def safe_div(numerator, denominator):
     return numerator / denominator
 
 
-def get_smooth_f1_score(input, target):
+def get_smooth_f_score(input, target, beta=1.):
     true_positive = torch.min(input, target)
     false_positive = torch.relu(input - target)
     false_negative = torch.relu(target - input)
@@ -767,14 +767,16 @@ def get_smooth_f1_score(input, target):
 
     precision = safe_div(TP, TP + FP)
     recall = safe_div(TP, TP + FN)
-    f1_score = safe_div(2 * precision * recall, precision + recall)
 
-    return f1_score, precision, recall
+    beta2 = beta ** 2
+    f_score = (1 + beta2) * safe_div(precision * recall, beta2 * precision + recall)
+
+    return f_score, precision, recall
 
 
-def get_notes_loss(input, target):
-    f1_score = get_smooth_f1_score(input, target)[0]
-    return 1. - f1_score
+def get_notes_loss(input, target, beta=1):
+    f_score = get_smooth_f_score(input, target, beta)[0]
+    return 1. - f_score
 
 
 def get_velocity_loss(input, target, mask):
