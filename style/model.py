@@ -797,14 +797,12 @@ def get_music_info_loss(input, target):
     target_instruments, target_bpm, target_mode = target
 
     instruments_loss = F.binary_cross_entropy(input_instruments, target_instruments)
-    # bpm_loss = torch.log(input_bpm / target_bpm) ** 2
-    # bpm_loss = ((input_bpm - target_bpm) / 150) ** 2
-    bpm_loss = torch.abs(input_bpm - target_bpm) / 150
+    bpm_loss = ((input_bpm - target_bpm) / 150) ** 2
     mode_loss = F.cross_entropy(input_mode, target_mode.argmax(1))
     return instruments_loss, bpm_loss, mode_loss
 
 
-def get_channels_losses(input, target):
+def get_channels_losses(input, target, pitched=True):
     target_velocity = get_velocity(target)
     mask = (target_velocity > 0).float()
 
@@ -812,5 +810,8 @@ def get_channels_losses(input, target):
     notes_loss = get_notes_loss(velocity, target_velocity)
     velocity_loss = get_velocity_loss(velocity, target_velocity, mask)
     duration_loss = get_duration_loss(get_duration(input), get_duration(target), mask)
-    accidentals_loss = get_accidentals_loss(get_accidentals(input), get_accidentals(target), mask)
-    return notes_loss, velocity_loss, duration_loss, accidentals_loss
+    if pitched:
+        accidentals_loss = get_accidentals_loss(
+            get_accidentals(input), get_accidentals(target), mask)
+        return notes_loss, velocity_loss, duration_loss, accidentals_loss
+    return notes_loss, velocity_loss, duration_loss
