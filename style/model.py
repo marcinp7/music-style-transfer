@@ -1,3 +1,7 @@
+import math
+
+import numpy as np
+
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -17,7 +21,13 @@ n_modes = 2
 
 min_bpm = 50
 max_bpm = 200
+
 bpm_range = max_bpm - min_bpm
+
+
+def get_mean_size(*values, factor=1):
+    mean = np.mean(values) * factor
+    return math.ceil(mean)
 
 
 class PitchedChannelsEncoder(nn.Module):
@@ -25,12 +35,14 @@ class PitchedChannelsEncoder(nn.Module):
         super().__init__()
         assert bar_size % 2 == 0
 
-        beats_conv_size = 32
-        instruments_linear_size = 32
+        beats_conv_in_channels = n_beat_fractions * n_pitched_features
+        beats_conv_out_channels = get_mean_size(beats_conv_in_channels, beat_size)
+        instruments_linear_size = get_mean_size(instrument_size, beat_size)
+        linear_size = beat_size
 
         self.beats_conv = nn.Conv1d(
-            in_channels=n_beat_fractions*n_pitched_features,
-            out_channels=beats_conv_size,
+            in_channels=beats_conv_in_channels,
+            out_channels=beats_conv_out_channels,
             kernel_size=2*n_scale_degrees,
             stride=n_scale_degrees,
             padding=4,
@@ -40,8 +52,12 @@ class PitchedChannelsEncoder(nn.Module):
             in_features=instrument_size,
             out_features=instruments_linear_size,
         )
+        self.linear = nn.Linear(
+            in_features=beats_conv_out_channels*n_octaves+instruments_linear_size,
+            out_features=linear_size,
+        )
         self.beats_lstm = LSTM(
-            input_size=beats_conv_size*n_octaves+instruments_linear_size,
+            input_size=linear_size,
             hidden_size=beat_size,
             num_layers=1,
             batch_first=True,
@@ -54,10 +70,6 @@ class PitchedChannelsEncoder(nn.Module):
             bidirectional=True,
             batch_first=True,
         )
-        # self.linear = nn.Linear(
-        #     in_features=32*8+32,
-        #     out_features=8*32,
-        # )
 
     def forward(self, channels, instruments_features):
         x = channels.transpose(-1, -2)
@@ -73,8 +85,8 @@ class PitchedChannelsEncoder(nn.Module):
         x2 = x.view(*x.shape[:2], 1, 1, -1)  # (batch, channel, bar, beat, features)
 
         x = cat_with_broadcast([x1, x2], -1)  # (batch, channel, bar, beat, features)
-        # x = self.linear(x)
-        # x = F.leaky_relu(x)
+        x = self.linear(x)
+        x = F.leaky_relu(x)
         beats = self.beats_lstm(x)[0]
 
         x = beats[:, :, :, -1]  # (batch, channel, bar, features)
@@ -89,14 +101,14 @@ class UnpitchedChannelsEncoder(nn.Module):
         super().__init__()
         assert bar_size % 2 == 0
 
-        beats_linear_size = 100
+        linear_size = beat_size
 
-        self.beats_linear = nn.Linear(
+        self.linear = nn.Linear(
             in_features=n_beat_fractions*n_unpitched_notes*n_unpitched_features,
-            out_features=beats_linear_size,
+            out_features=linear_size,
         )
         self.beats_lstm = LSTM(
-            input_size=beats_linear_size,
+            input_size=linear_size,
             hidden_size=beat_size,
             num_layers=1,
             batch_first=True,
@@ -115,7 +127,7 @@ class UnpitchedChannelsEncoder(nn.Module):
         # (batch, channel, bar, beat, beat_fraction, note_features, note)
         x = x.contiguous()
         x = squash_dims(x, 4, 7)  # (batch, channel, bar, beat, features)
-        x = self.beats_linear(x)
+        x = self.linear(x)
         x = F.leaky_relu(x)
         beats = self.beats_lstm(x)[0]  # (batch, channel, bar, beat, features)
 
@@ -130,14 +142,13 @@ class StyleEncoder(nn.Module):
     def __init__(self, style_size, bar_size, instrument_size):
         super().__init__()
 
-        bars_lstm_size = style_size // 2
-        instruments_linear_size = 32
-        mode_linear_size = 8
-        bpm_linear_size = 8
+        bars_lstm_size = get_mean_size(bar_size, style_size)
+        instruments_linear_size = get_mean_size(instrument_size, style_size, factor=.25)
+        mode_linear_size = get_mean_size(n_modes, style_size, factor=.1)
+        bpm_linear_size = get_mean_size(style_size, 1, factor=.05)
 
         linear_input_size = sum([
-            bars_lstm_size, instruments_linear_size, mode_linear_size, bpm_linear_size
-        ])
+            bars_lstm_size, instruments_linear_size, mode_linear_size, bpm_linear_size])
 
         self.bars_lstm = LSTM(
             input_size=bar_size,
@@ -190,13 +201,13 @@ class MelodyEncoder(nn.Module):
     def __init__(self, melody_size, beat_size, bar_size, instrument_size):
         super().__init__()
 
-        beats_linear_size = 16
-        bars_linear_size = 16
-        instrument_linear_size = 8
-        linears_size = 16
-        channels_linear_size = 16
+        beats_linear_size = get_mean_size(beat_size, melody_size)
+        bars_linear_size = get_mean_size(bar_size, melody_size)
+        instrument_linear_size = get_mean_size(instrument_size, melody_size, factor=.25)
+        linears_size = melody_size
+        channels_linear_size = get_mean_size(n_pitched_features, melody_size)
 
-        linears_input_size = beats_linear_size + bars_linear_size + instrument_linear_size
+        linears_input_size = sum([beats_linear_size, bars_linear_size, instrument_linear_size])
 
         # self.beat_conv = nn.Conv1d(
         #     in_channels=5*10,
@@ -283,21 +294,22 @@ class MelodyEncoder(nn.Module):
         return x
 
 
+# todo: channels_linear
 class PitchedRhythmEncoder(nn.Module):
     def __init__(self, rhythm_size, beat_size, bar_size, instrument_size):
         super().__init__()
 
-        beats_linear_size = 16
-        bars_linear_size = 16
-        channels_linear_size = 16
-        instruments_linear_size = 16
-        mode_linear_size = 4
-        bpm_linear_size = 4
+        beats_linear_size = get_mean_size(beat_size, rhythm_size)
+        bars_linear_size = get_mean_size(bar_size, rhythm_size, factor=.5)
+        channels_linear_size = get_mean_size(n_pitched_notes * n_pitched_features, rhythm_size,
+                                             factor=.1)
+        instruments_linear_size = get_mean_size(instrument_size, rhythm_size, factor=.5)
+        mode_linear_size = get_mean_size(n_modes, rhythm_size, factor=.25)
+        bpm_linear_size = get_mean_size(1, rhythm_size, factor=.25)
 
         linear_input_size = sum([
             beats_linear_size, bars_linear_size, channels_linear_size, instruments_linear_size,
-            mode_linear_size, bpm_linear_size
-        ])
+            mode_linear_size, bpm_linear_size])
 
         self.beats_linear = nn.Linear(
             in_features=beat_size,
@@ -370,14 +382,14 @@ class UnpitchedRhythmEncoder(nn.Module):
     def __init__(self, rhythm_size, beat_size, bar_size):
         super().__init__()
 
-        beats_linear_size = 16
-        bars_linear_size = 16
-        channels_linear_size = 16
-        bpm_linear_size = 4
+        beats_linear_size = get_mean_size(beat_size, rhythm_size)
+        bars_linear_size = get_mean_size(bar_size, rhythm_size, factor=.5)
+        channels_linear_size = get_mean_size(n_unpitched_notes * n_unpitched_features, rhythm_size,
+                                             factor=.25)
+        bpm_linear_size = get_mean_size(1, rhythm_size, factor=.25)
 
         linear_input_size = sum([
-            beats_linear_size, bars_linear_size, channels_linear_size, bpm_linear_size
-        ])
+            beats_linear_size, bars_linear_size, channels_linear_size, bpm_linear_size])
 
         self.beats_linear = nn.Linear(
             in_features=beat_size,
@@ -432,16 +444,17 @@ class SongInfoModel(nn.Module):
     def __init__(self, n_rhythm_features, style_size, rhythm_size, n_instruments):
         super().__init__()
 
-        beats_lstm_size = 8
+        beats_lstm_size = get_mean_size(n_beat_fractions * rhythm_size, n_rhythm_features,
+                                        factor=.05)
 
-        style_instruments_linear_size = n_instruments // 4
-        rhythm_instruments_linear_size = n_instruments // 4
+        style_instruments_linear_size = get_mean_size(style_size, n_instruments, factor=.05)
+        rhythm_instruments_linear_size = get_mean_size(rhythm_size, n_instruments, factor=.25)
 
-        style_mode_linear_size = 2
-        rhythm_mode_linear_size = 2
+        style_mode_linear_size = get_mean_size(style_size, n_modes, factor=.01)
+        rhythm_mode_linear_size = get_mean_size(rhythm_size, n_modes, factor=.1)
 
-        style_bpm_linear_size = 2
-        rhythm_bpm_linear_size = 2
+        style_bpm_linear_size = get_mean_size(style_size, 1, factor=.01)
+        rhythm_bpm_linear_size = get_mean_size(rhythm_size, 1, factor=.1)
 
         self.beats_lstm = LSTM(
             input_size=n_beat_fractions*rhythm_size,
@@ -568,13 +581,14 @@ class PitchedStyleApplier(nn.Module):
     def __init__(self, style_size, melody_size, rhythm_size, instrument_size):
         super().__init__()
 
-        style_linear_size = 50
-        rhythm_linear_size = 10
-        instruments_linear_size = 10
-        linears_output_size = 32
-        melody_linear_size = 32
+        style_linear_size = get_mean_size(style_size, n_pitched_features, factor=.5)
+        rhythm_linear_size = get_mean_size(rhythm_size, n_pitched_features, factor=.5)
+        instruments_linear_size = get_mean_size(instrument_size, n_pitched_features, factor=.4)
+        linears_output_size = n_pitched_features * 6
+        melody_linear_size = get_mean_size(melody_size, n_pitched_features, factor=3)
 
-        linear_input_size = style_linear_size + rhythm_linear_size + instruments_linear_size
+        linear_input_size = sum([
+            style_linear_size, rhythm_linear_size, instruments_linear_size])
 
         self.style_linear = nn.Linear(
             in_features=style_size,
@@ -662,11 +676,10 @@ class PitchedStyleApplier(nn.Module):
 class UnpitchedStyleApplier(nn.Module):
     def __init__(self, style_size, rhythm_size):
         super().__init__()
-        self.n_unpitched_notes = n_unpitched_notes
 
-        style_linear_size = 32
-        rhythm_linear_size = 32
-        notes_linear_size = 8
+        style_linear_size = get_mean_size(style_size, n_unpitched_features, factor=.5)
+        rhythm_linear_size = get_mean_size(rhythm_size, n_unpitched_features, factor=1)
+        notes_linear_size = n_unpitched_features * 4
 
         self.style_linear = nn.Linear(
             in_features=style_size,
@@ -697,7 +710,7 @@ class UnpitchedStyleApplier(nn.Module):
         x = cat_with_broadcast([x1, x2], -1)  # (batch, bar, beat, beat_fraction, features)
         x = self.notes_linear(x)
         x = F.leaky_relu(x)
-        x = x.view(*x.shape[:4], self.n_unpitched_notes, -1)
+        x = x.view(*x.shape[:4], n_unpitched_notes, -1)
         # (batch, bar, beat, beat_fraction, note, features)
         x = self.linear(x)  # (batch, bar, beat, beat_fraction, note, note_features)
 
@@ -758,8 +771,8 @@ class StyleTransferModel(nn.Module):
         return style, melody, rhythm
 
     def predict_song_info(self, style, rhythm):
-        instruments, bpm, mode = self.song_info_model(style, rhythm)
-        return instruments, bpm, mode
+        instruments, mode, bpm = self.song_info_model(style, rhythm)
+        return instruments, mode, bpm
 
     def apply_style(self, style, melody, rhythm, instruments_features, unpitched=False):
         x_pitched = self.pitched_style_applier(style, melody, rhythm, instruments_features)
@@ -772,10 +785,10 @@ class StyleTransferModel(nn.Module):
 
         style, melody, rhythm = self.extract_style(
             mode, bpm, pitched_channels, instruments_features, unpitched_channels)
-        instruments_pred, bpm_pred, mode_pred = self.predict_song_info(style, rhythm)
+        instruments_pred, mode_pred, bpm_pred = self.predict_song_info(style, rhythm)
         x_pitched, x_unpitched = self.apply_style(
             style, melody, rhythm, instruments_features, unpitched_channels is not None)
-        return (instruments_pred, bpm_pred, mode_pred), x_pitched, x_unpitched
+        return (instruments_pred, mode_pred, bpm_pred), x_pitched, x_unpitched
 
 
 def combine(*tensors, dim=None, safe=True):
@@ -886,9 +899,9 @@ def get_song_info_loss(input, target):
     target_instruments, target_bpm, target_mode = target
 
     instruments_loss = F.binary_cross_entropy(input_instruments, target_instruments)
-    bpm_loss = ((input_bpm - target_bpm) / bpm_range) ** 2
     mode_loss = F.cross_entropy(input_mode, target_mode.argmax(1))
-    return instruments_loss, bpm_loss, mode_loss
+    bpm_loss = ((input_bpm - target_bpm) / bpm_range) ** 2
+    return instruments_loss, mode_loss, bpm_loss
 
 
 def get_channels_losses(input, target, pitched=True):
