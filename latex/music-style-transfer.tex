@@ -1,36 +1,19 @@
-% dodaj opcję [licencjacka] dla pracy licencjackiej
-% dodaj opcję [en] dla wersji angielskiej (mogą być obie: [licencjacka,en])
 \documentclass[en]{pracamgr}
 
-% Dane magistranta:
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+
+\usepackage{etoolbox}
+\apptocmd{\thebibliography}{\raggedright}{}{}
+
 \autor{Marcin Papierzyński}{345782}
 
 \title{Music Style Transfer}
 \titlepl{Transfer Stylu Muzycznego}
 
-%kierunek: 
-% - matematyka, informacyka, ...
-% - Mathematics, Computer Science, ...
 \kierunek{Computer Science}
 
-% informatyka - nie okreslamy zakresu (opcja zakomentowana)
-% matematyka - zakres moze pozostac nieokreslony,
-% a jesli ma byc okreslony dla pracy mgr,
-% to przyjmuje jedna z wartosci:
-% {metod matematycznych w finansach}
-% {metod matematycznych w ubezpieczeniach}
-% {matematyki stosowanej}
-% {nauczania matematyki}
-% Dla pracy licencjackiej mamy natomiast
-% mozliwosc wpisania takiej wartosci zakresu:
-% {Jednoczesnych Studiow Ekonomiczno--Matematycznych}
-
-% \zakres{Tu wpisac, jesli trzeba, jedna z opcji podanych wyzej}
-
-% Praca wykonana pod kierunkiem:
-% (podać tytuł/stopień imię i nazwisko opiekuna
-% Instytut
-% ew. Wydział ew. Uczelnia (jeżeli nie MIM UW))
 \opiekun{dr hab. Marek Cygan\\
   Instytut Informatyki
   }
@@ -46,13 +29,9 @@
   Arts and humanities\\
   Sound and music computing}
 
-% Słowa kluczowe:
 \keywords{style transfer, music, midi, neural networks}
 
-% Tu jest dobre miejsce na Twoje własne makra i~środowiska:
 \newtheorem{defi}{Definicja}[section]
-
-% koniec definicji
 
 \begin{document}
 \maketitle
@@ -146,10 +125,10 @@ The data flow of the whole architecture is comprised of 3 stages: style extracti
 
 The input in the first stage is:
 \begin{itemize}
-\item instruments used in the song
-\item tempo
-\item mode of the song (major or minor)
-\item song content (information about which notes are played in any moment in time for any instrument used in the song)
+    \item instruments used in the song
+    \item tempo
+    \item mode of the song (major or minor)
+    \item song content (information about which notes are played in any moment in time for any instrument used in the song)
 \end{itemize}
 
 The output is comprised of 3 parts: melody, rhythm and style.
@@ -171,9 +150,9 @@ Melody and rhythm, along with the style, should enable to recreate all the instr
 The input in this stage is style and rhythm.
 The output is basic information about a song (as in the first stage):
 \begin{itemize}
-\item used instruments (classification)
-\item tempo (regression)
-\item mode (classification)
+    \item used instruments (classification)
+    \item tempo (regression)
+    \item mode (classification)
 \end{itemize}
 
 All those outputs should coincide with the respective inputs from the first stage.
@@ -195,7 +174,7 @@ Note events are assigned to one of the 16 channels -- each of those channels can
 
 The MIDI file is encoded as a tensor in the format:
 \begin{center}
-(\emph{batch, channel, bar, beat, beat fraction, note, note features}).
+    (\emph{batch, channel, bar, beat, beat fraction, note, note features}).
 \end{center}
 
 The \emph{channel} dimension refers to MIDI channel (an instrument).
@@ -226,9 +205,9 @@ However, the number of notes and note features (lengths of dimensions \emph{note
 
 Note features for pitched instruments are:
 \begin{itemize}
-\item velocity (loudness)
-\item duration
-\item accidentals (raise or lower the note one semitone)
+    \item velocity (loudness)
+    \item duration
+    \item accidentals (raise or lower the note one semitone)
 \end{itemize}
 
 For percussion the only note features are velocity and duration.
@@ -258,20 +237,20 @@ I use fairly simple heuristics based on the Krumhansl-Schmuckler key-finding alg
 
 Melody is a tensor of shape
 \begin{center}
-(\emph{batch, channel, bar, beat, beat fraction, note, features}),
+    (\emph{batch, channel, bar, beat, beat fraction, note, features}),
 \end{center}
 which is the same as input shape but with no \emph{instrument} dimension.
 The number of note features may also be different.
 
 Rhythm is a tensor of shape
 \begin{center}
-(\emph{batch, channel, bar, beat, beat fraction, features}).
+    (\emph{batch, channel, bar, beat, beat fraction, features}).
 \end{center}
 It's also similar to the input but this time with no \emph{instrument} and no \emph{note} dimensions.
 
 Style is encoded as a regular vector, so it has shape
 \begin{center}
-(\emph{batch, features}).
+    (\emph{batch, features}).
 \end{center}
 
 Number of features in the melody should be low enough so that the model cannot simply remember all the instruments in the input.
@@ -311,10 +290,3 @@ After training, the model is used to extract style and composition from two song
 \end{thebibliography}
 
 \end{document}
-
-
-%%% Local Variables:
-%%% mode: latex
-%%% TeX-master: t
-%%% coding: latin-2
-%%% End:
