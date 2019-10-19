@@ -50,17 +50,17 @@
 
 Transfer of style between images is a well-known problem.
 Currently it can be realized between any two images by using convolutional neural networks.
-The analogous style transfer done for music is a much less explored topic and it's challenging even to define what exactly a musical style is.
+The analogous style transfer done for music is a much less explored topic and it is challenging even to define what exactly a musical style is.
 
 In this paper the goal is to define some sensible notion of musical style and create a model that can create a different arrangement for any song based on style extracted from any other song.
-The music used for training is assumed to be in MIDI format and can use any range of instruments.
+The music used for training is assumed to be in the MIDI format and can use any range of instruments.
 The instruments supported by the model must be set during training, but the supported styles do not -- we want the trained model to be able to extract style from any song.
 
 \chapter{Other works}
 
 There exist previous works doing music style transfer to some extent.
 A few examples are shortly described below.
-All of them, however, are performing a simpler kind of style transfer.
+All of them, however, are performing a simpler kind of a style transfer.
 
 \section{Neural Translation of Musical Style}
 
@@ -75,7 +75,7 @@ In Symbolic Music Genre Transfer with CycleGAN \cite{cyclegan} the described mod
 \section{Play as You Like: Timbre-enhanced Multi-modal Music Style Transfer}
 
 In Timbre-enhanced Multi-modal Music Style Transfer \cite{multimodal} the model can operate on different instruments, but the styles still need to be set during training (the styles are actually instruments, the authors are using guitar, piano and string quartet).
-Like in the previous examples, it doesn't allow to transfer style between any two songs.
+Like in the previous examples, it doesn't allow to transfer style between arbitrary songs.
 
 \chapter{Overview and results}
 
@@ -84,8 +84,8 @@ Like in the previous examples, it doesn't allow to transfer style between any tw
 For musical style transfer, the two main notions concerning songs are composition and style.
 I start by giving a rough definition of them.
 
-Composition is any information about a song that is related to specific moment in time, e.g. if the music gets louder or some instrument starts playing.
-The most important part of composition is the melody (played by one or more instruments).
+Composition is any information about a song that is related to a specific moment in time, e.g. if the music gets louder or some instrument starts playing.
+The most important part of a composition is the melody (played by one or more instruments).
 
 The style, on the other hand, is information not related to any specific moment in time, e.g. the general mood of the song or the way specific instruments are used (for example, which instruments play the main melodic line and which ones create a backing).
 
@@ -116,37 +116,37 @@ The machine learning framework I use is PyTorch, along with mido -- a Python lib
 \section{Data}
 
 The dataset I use is Lakh MIDI Dataset\footnote{https://colinraffel.com/projects/lmd/}.
-It contains over 100,000 songs in MIDI format and covers various genres, including pop, rock or classical.
+It contains over 100,000 songs in the MIDI format and covers various genres, including pop, rock or classical.
 
 \chapter{Data flow}
 
-The data flow of the whole architecture is comprised of 3 stages: style extraction, predicting song information, and style applying.
+The data flow of the whole architecture is comprised of 3 stages: style extraction, predicting song information, and style application.
 
 \section{Style extraction}
 
 The input in the first stage is:
 \begin{itemize}
-    \item instruments used in the song
+    \item instruments used in a song
     \item tempo
     \item mode of the song (major or minor)
-    \item song content (information about which notes are played in any moment in time for any instrument used in the song)
+    \item song content (information about which notes are played in any moment in time for any instrument used in a song)
 \end{itemize}
 
 The output is comprised of 3 parts: melody, rhythm and style.
 I will refer to melody and rhythm as composition.
 
 Melody should encode song content (like the input) but with no information about specific instruments (it must combine them).
-It encodes all pitched instruments used in the song.
+It encodes all pitched instruments used in a song.
 
 Rhythm contains additional information about the melody (but not explicitly related to specific notes) and features of percussion if it is present in the input song.
 The main reason for introducing rhythm alongside melody is to be able to represent percussion (the only unpitched instrument) but at the same time do not force it if it's not present in the original song (the model should be able to add percussion to a song that originally didn't have it).
 
-I require that there is always at least one pitched instrument used in the song, while the percussion is optional.
+I require that there is always at least one pitched instrument used in a song, while the percussion is optional.
 That way both melody and rhythm are always well-definied (there is at least one pitched instrument they can encode).
 
-Melody and rhythm, along with the style, should enable to recreate all the instruments used in the song.
+Melody and rhythm, along with the style, should enable to recreate all the instruments used in a song.
 
-\section{Predicting song info}
+\section{Predicting song information}
 
 The input in this stage is style and rhythm.
 The output is basic information about a song (as in the first stage):
@@ -158,9 +158,9 @@ The output is basic information about a song (as in the first stage):
 
 All those outputs should coincide with the respective inputs from the first stage.
 
-\section{Style applying}
+\section{Style application}
 
-At this stage the input are composition and style from the first stage.
+At this stage the inputs are composition and style from the first stage.
 The output is the song content for each of the used instruments.
 Generated song content should conincide with the input from the first stage.
 In other words, the model must reconstruct the original song.
@@ -178,8 +178,8 @@ The MIDI file is encoded as a tensor in the format:
     (\emph{batch, channel, bar, beat, beat fraction, note, note features}).
 \end{center}
 
-The \emph{channel} dimension refers to MIDI channel (an instrument).
-The \emph{bar}, \emph{beat} and \emph{beat fraction} dimensions point to the exact moment in the song when the note is being played.
+The \emph{channel} dimension refers to a MIDI channel (an instrument).
+The \emph{bar}, \emph{beat} and \emph{beat fraction} dimensions point to the exact moment in a song when the note is being played.
 
 \subsection{Specifying time}
 
@@ -196,13 +196,13 @@ $$
 
 Each \emph{note fraction} coordinate represents one of those fractions.
 Including fractions with denominator 3 allows for the exact representation of triplets, which otherwise would need to be approximated using fractions with denominator 8.
-It's worth noting that because of that, those fractions are not equidistant, meaning that it's not justified to apply convolution along \emph{note fraction} dimension.
+It's worth noting that because of that, those fractions are not equidistant, meaning that it's not justified to apply convolution along the \emph{note fraction} dimension.
 However, the length of this dimension is not substantial, so it's not a big problem. More fractions could be added to allow for representing faster melodies, but these 10 are enough for most songs.
 
 \subsection{Note features}
 
 The above format is used for both percussion and pitched instruments.
-However, the number of notes and note features (lengths of dimensions \emph{note} and \emph{note features} respectively) is different for percussion than for pitched instruments, so 2 tensors must be used: one for pitched instruments and one (possibly empty) for percussion.
+However, the number of notes and note features (lengths of dimensions \emph{note} and \emph{note features} respectively) is different for percussion and for pitched instruments, so two tensors must be used: one for pitched instruments and one (possibly empty) for percussion.
 
 Note features for pitched instruments are:
 \begin{itemize}
@@ -224,7 +224,7 @@ Hence, with the typical way of encoding notes, the melody representation would p
 
 To remedy that, I encode the notes relative to the scale the song is in.
 Effectively, what is encoded are not the actual notes, but rather the scale degrees they represent; so the note C in a song in C major would be encoded the same way as the note G in a song in G minor.
-That way changing the scale of the song will not affect the melody representation.
+That way, changing the scale of the song will not affect the melody representation.
 
 This way of encoding only allows to encode notes contained in a given scale (which covers 7 out of 12 notes in each octave).
 For example, if the song is in C major, we could only encode "white keys".
@@ -240,7 +240,7 @@ Melody is a tensor of shape
 \begin{center}
     (\emph{batch, channel, bar, beat, beat fraction, note, features}),
 \end{center}
-which is the same as input shape but with no \emph{instrument} dimension.
+which is the same as the input shape but with no \emph{instrument} dimension.
 The number of note features may also be different.
 
 Rhythm is a tensor of shape
@@ -254,7 +254,7 @@ Style is encoded as a regular vector, so it has shape
     (\emph{batch, features}).
 \end{center}
 
-Number of features in the melody should be low enough so that the model cannot simply remember all the instruments in the input.
+The number of features in a melody should be low enough so that the model cannot simply remember all the instruments in the input.
 Instead, the model will need to learn some compressed high-level representation of the melody, from which it will later be able to reconstruct the input instruments, using the style vector.
 
 \chapter{Model}
@@ -289,7 +289,7 @@ The loss function measures if the song generated by the model is the same as the
 					\item duration loss (MSE)
 				\end{itemize}
 		\end{itemize}
-	\item song info loss
+	\item song information loss
 		\begin{itemize}
 			\item instruments loss (cross-entropy)
 			\item tempo loss (MSE)
@@ -298,7 +298,7 @@ The loss function measures if the song generated by the model is the same as the
 	\end{itemize}
 \end{itemize}
 
-This hierarchy signifies that the total loss is the average of channels loss and song info loss, channels loss is the average of pitched and unpitched channels loss, etc.
+This hierarchy signifies that the total loss is the average of channels loss and song information loss, channels loss is the average of pitched and unpitched channels loss, etc.
 
 Notes loss is measuring if the model is generating the right sounds.
 Since the desired output is greatly unbalanced (most of all the possible notes will not be played), I'm using a complement of smooth F1 score to measure notes loss:
@@ -317,12 +317,12 @@ Smooth $F_1$ score is definied in a standard way, using
 \end{align}
 
 where $p,t\in[0,1]$ are prediction and ground truth respectively, interpreted as fuzzy logical values.
-In case when $p$ and $t$ can only take discrete values of 0 or 1, this gives a standard definition of $F_1$ score.
-Thus, it is a generalization of $F_1$ score compatible with gradient descent.
+In case when $p$ and $t$ can only take discrete values of 0 or 1, this gives a standard definition of the $F_1$ score.
+Thus, it is a generalization of the $F_1$ score compatible with gradient descent.
 In our case the notes' fuzzy logical values are defined from velocity (1 meaning that the note is played with maximum possible velocity, and 0 meaning that the note is not played at all).
 
 Velocity loss measures if the model is generating notes with the right loudness.
-Velocity is already measured by notes loss (acquiring maximum $F_1$ score requires playing with exactly right velocities), so this loss function provides additional, more explicit component measuring velocity error.
+Velocity is already measured by the notes loss (acquiring maximum $F_1$ score requires playing with exactly right velocities), so this loss function provides additional, more explicit component measuring the velocity error.
 It only takes into account the notes that should be played to avoid problems with unbalanced output (the same is true for duration loss).
 
 Since different kinds of loss functions have different magnitudes, before averaging, all the components are normalized to take values in the $[0,1]$ interval.
@@ -330,8 +330,8 @@ Then, the normalized components are averaged using quadratic mean to yield the t
 
 \section{Training}
 
-The model was trained for 2000 iterations using Adam optimizer \cite{adam}.
-In each iteration the input is one random song from the dataset. Figure \ref{fig:total} shows total loss during training, while figures \ref{fig:channels} and \ref{fig:song_info} show specific components of the loss function. All the plots are smoothed using exponential moving average with momentum parameter equal to .99 and initial bias equal to 1 (maximum possible error).
+The model was trained for 2000 iterations using the Adam optimizer \cite{adam}.
+In each iteration the input is a random song from the dataset. Figure \ref{fig:total} shows total loss during training, while figures \ref{fig:channels} and \ref{fig:song_info} show specific components of the loss function. All the plots are smoothed using exponential moving average with momentum parameter equal to .99 and initial bias equal to 1 (maximum possible error).
 
 \begin{figure}
     \centering
@@ -343,17 +343,17 @@ In each iteration the input is one random song from the dataset. Figure \ref{fig
         \includegraphics[width=\linewidth]{figures/total.pdf}
         \caption{Loss components.}
     \end{subfigure}%
-    \caption{Total loss and its components during training. As can be seen on the second plot, predicting basic song info is easier than generating music, especially at the beginning of training.}
+    \caption{Total loss and its components during training. As can be seen on the second plot, predicting basic song information is easier than generating music, especially at the beginning of training.}
     \label{fig:total}
 \end{figure}
 
 Figure \ref{fig:pitched_vs_unptiched} shows how pitched and unpitched notes losses compare during trainig.
 In general percussion is easier for the model, as indicated by lower error value for the most time of training.
-Interestingly however, approximately during iterations 200-800 the unpitched notes loss is significantly higher (around .7) than pitched notes loss (around .55).
+Interestingly however, approximately during iterations 200-800 the unpitched notes loss is significantly higher (around .7) than the pitched notes loss (around .55).
 Possible explanaition is that it's easy to achieve this level of unpitched notes loss by mostly repeating the most common drum patterns.
 This hypothesis can be confirmed by listening to the music generated by the snapshot of the model at iteration 300 (before unpitched notes loss started to decrease again).
 As it turns out, the generated percussion is indeed very basic, only featuring some typical drum patters found in most of the pop/rock music.
-To achieve lower unpitched notes loss the model needed to start encoding some useful information about percussion, but could not do so explicitely per note (like for pitched instruments), which explain why for some time percussion posed a main challenge for the model.
+To achieve lower unpitched notes loss the model needed to start encoding some useful information about percussion, but could not do so explicitely per note (like for pitched instruments), which explains why for some time percussion posed a main challenge for the model.
 
 \begin{figure}
     \centering
@@ -367,7 +367,7 @@ To achieve lower unpitched notes loss the model needed to start encoding some us
         \includegraphics[width=.9\linewidth]{figures/notes.pdf}
         \caption{
             Comparision of pitched and unpitched notes loss.
-            Red line represents how well the model is playing the percussion, while blue line represents all the other instruments.
+            The red line represents how well the model is playing the percussion, while the blue line represents all the other instruments.
             We can see that in general pitched instruments are harder than percussion -- at the beginning the model needs some time to start learning to play pitched instruments, and pitched notes loss eventually saturates at higher level than unpitched notes loss.
             There are however a few hundred iterations during training when the model is actually better at playing pitched instruments than percussion.
         }
@@ -380,7 +380,7 @@ To achieve lower unpitched notes loss the model needed to start encoding some us
 \begin{figure}
     \centering
     \includegraphics[width=\linewidth]{figures/song-info.pdf}
-    \caption{Song info loss components during training.}
+    \caption{Song information loss components during training.}
     \label{fig:song_info}
 \end{figure}
 
