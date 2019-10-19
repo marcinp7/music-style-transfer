@@ -120,7 +120,7 @@ It contains over 100,000 songs in the MIDI format and covers various genres, inc
 
 \chapter{Data flow}
 
-The data flow of the whole architecture is comprised of 3 stages: style extraction, predicting song information, and style application.
+The data flow of the whole architecture is composed of 3 stages: style extraction, predicting song information, and style application.
 
 \section{Style extraction}
 
@@ -132,7 +132,7 @@ The input in the first stage is:
     \item song content (information about which notes are played in any moment in time for any instrument used in a song)
 \end{itemize}
 
-The output is comprised of 3 parts: melody, rhythm and style.
+The output is composed of 3 parts: melody, rhythm and style.
 I will refer to melody and rhythm as composition.
 
 Melody should encode song content (like the input) but with no information about specific instruments (it must combine them).
@@ -157,6 +157,7 @@ The output is basic information about a song (as in the first stage):
 \end{itemize}
 
 All those outputs should coincide with the respective inputs from the first stage.
+Note that the set of supported instruments can be arbitrarily large but needs to be specified during training.
 
 \section{Style application}
 
@@ -187,17 +188,29 @@ I assume that the time signature cannot change, so that the number of the beats 
 The \emph{bar} and \emph{beat} dimensions denote in which bar and at which beat the note should play.
 The \emph{beat fraction} dimension is specifying the exact moment during the beat.
 
-I divide the beat into 8 parts, which gives 8 possible fractions: 0, 1/8, 2/8, ..., 7/8.
-Independently, I also divide the beat into 3 parts: 0, 1/3, 2/3.
+I divide the beat into 8 parts, which gives 8 possible fractions: $0, \frac{1}{8}, \frac{2}{8}, \ldots, \frac{7}{8}$.
+Independently, I also divide the beat into 3 parts: $0, \frac{1}{3}, \frac{2}{3}$.
 Combining it, symplifying and sorting, we get 10 different fractions:
 $$
 0, \frac{1}{8}, \frac{1}{4}, \frac{1}{3}, \frac{3}{8}, \frac{1}{2}, \frac{5}{8}, \frac{3}{4}, \frac{2}{3}, \frac{7}{8}.
 $$
 
 Each \emph{note fraction} coordinate represents one of those fractions.
-Including fractions with denominator 3 allows for the exact representation of triplets, which otherwise would need to be approximated using fractions with denominator 8.
-It's worth noting that because of that, those fractions are not equidistant, meaning that it's not justified to apply convolution along the \emph{note fraction} dimension.
-However, the length of this dimension is not substantial, so it's not a big problem. More fractions could be added to allow for representing faster melodies, but these 10 are enough for most songs.
+A single beat most commonly has length of a quarter note, which means that fractions with denominator 8 allow to represent up to 32th notes.
+While division into powers of 2 is the most common in music, many songs also use division into three parts, called triplets.
+Inclusion of fractions with denominator 3 allows for the exact representation of them, which otherwise would need to be approximated using fractions with denominator 8.
+More fractions could be added to allow for representing faster melodies, but these 10 are enough for most songs.
+
+The typical way of splitting the beat in neural music generation is to simply divide it into timesteps of equal length, e.g. into 12 parts \cite{clara}.
+The downside of this approach is that it creates many "unnecessary" fractions (like $\frac{1}{12}$), which are not typically used, so they mainly only increase the size of the MIDI file representation.
+The increase in the size is quite significant, since being able to represent 32th notes using this approach would require denominator $24=3\cdot8$, resulting in the whole input being over two times bigger.
+Here I only introduce the fractions that are necessary to represent triplets ($\frac{1}{3}$ and $\frac{2}{3}$), omitting the rest.
+
+The proposed approach also scales well with addition of more tuplets.
+For example, adding support for quintuplets (division into 5 parts), would only require adding 4 more fractions ($\frac{1}{5}, \frac{2}{5}, \frac{3}{5}$ and $\frac{4}{5}$), resulting in a constant increase in size ($14=10 + 4$ timesteps), while with even splitting it would mean a 5-fold increase in the total size ($120=3\cdot5\cdot8$ timesteps). More complex tuplets are however much less common (and virtually never used in the popular music), so I don't use them here.
+
+It's worth noting that in my approach resulting fractions are not equidistant, meaning that it's not justified to apply convolution along the \emph{note fraction} dimension.
+However, the length of this dimension is not substantial and it's still possible to apply convolution along \emph{bar} and \emph{beat} dimensions, so it's not a big limitation.
 
 \subsection{Note features}
 
@@ -216,7 +229,8 @@ For percussion the only note features are velocity and duration.
 \section{Notes' representation}
 
 I use note's span of 8 octaves, each with 12 sounds, which gives 96 possible notes in total.
-Typical way of encoding notes is to have each coordinate in a \emph{note} dimension correspond to a specific note (so \emph{note} dimension would have length 96).
+The notes are represented as one-hot encoded vectors with a slight modification.
+In the standard one-hot encoding, each coordinate in a \emph{note} dimension would correspond to a specific note (so \emph{note} dimension would have length 96).
 However, this way of encoding would pose a problem for style transfer.
 Namely, depending on the mode of the song (major or minor), a different set of notes is used.
 This means that the same song in a different mode would use different sounds in its melody.
@@ -398,6 +412,8 @@ After training, the model is used to extract style and composition from two song
 \bibitem{cyclegan} Gino Brunner, Yuyi Wang, Roger Wattenhofer, Sumu Zhao, \textit{Symbolic Music Genre Transfer with CycleGAN}, https://arxiv.org/abs/1809.07575.
 
 \bibitem{multimodal} Chien-Yu Lu, Min-Xin Xue, Chia-Che Chang, Che-Rung Lee, Li Su, \textit{Play as You Like: Timbre-enhanced Multi-modal Music Style Transfer}, https://arxiv.org/abs/1811.12214.
+
+\bibitem{clara} Christine Payne, OpenAI Scholars Program, \textit{Clara: Generating Polyphonic and Multi-Instrument Music Using an AWD-LSTM Architecture}, http://www.christinemcleavey.com/files/clara-musical-lstm.pdf.
 
 \bibitem{adam} Diederik P. Kingma, Jimmy Ba, \textit{Adam: A Method for Stochastic Optimization}, https://arxiv.org/abs/1412.6980.
 
