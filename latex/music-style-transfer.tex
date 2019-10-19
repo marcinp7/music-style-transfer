@@ -127,12 +127,17 @@ The data flow of the whole architecture is composed of 3 stages: style extractio
 The input in the first stage is:
 \begin{itemize}
     \item instruments used in a song
-    \item tempo
-    \item mode of the song (major or minor)
+    \item mode of a song (major or minor)
+    \item tempo (in beats per minute)
     \item song content (information about which notes are played in any moment in time for any instrument used in a song)
 \end{itemize}
 
+Mode and used instruments are represented using one-hot encoding.
+I use 41 most popular instruments in the dataset (percussion and 40 pitched instruments) covering 90\% of all the sounds in the dataset.
+The tempo is a numerical value between 50 and 200 (and is clamped to that interval, if necessary).
+
 The output is composed of 3 parts: melody, rhythm and style.
+Each of them contains features as learnable embeddings.
 I will refer to melody and rhythm as composition.
 
 Melody should encode song content (like the input) but with no information about specific instruments (it must combine them).
@@ -152,8 +157,8 @@ The input in this stage is style and rhythm.
 The output is basic information about a song (as in the first stage):
 \begin{itemize}
     \item used instruments (classification)
-    \item tempo (regression)
     \item mode (classification)
+    \item tempo (regression)
 \end{itemize}
 
 All those outputs should coincide with the respective inputs from the first stage.
@@ -161,7 +166,7 @@ Note that the set of supported instruments can be arbitrarily large but needs to
 
 \section{Style application}
 
-At this stage the inputs are composition and style from the first stage.
+At this stage the inputs are composition (i.e. melody and rhythm) and style from the first stage.
 The output is the song content for each of the used instruments.
 Generated song content should conincide with the input from the first stage.
 In other words, the model must reconstruct the original song.
@@ -207,7 +212,7 @@ The increase in the size is quite significant, since being able to represent 32t
 Here I only introduce the fractions that are necessary to represent triplets ($\frac{1}{3}$ and $\frac{2}{3}$), omitting the rest.
 
 The proposed approach also scales well with addition of more tuplets.
-For example, adding support for quintuplets (division into 5 parts), would only require adding 4 more fractions ($\frac{1}{5}, \frac{2}{5}, \frac{3}{5}$ and $\frac{4}{5}$), resulting in a constant increase in size ($14=10 + 4$ timesteps), while with even splitting it would mean a 5-fold increase in the total size ($120=3\cdot5\cdot8$ timesteps). More complex tuplets are however much less common (and virtually never used in the popular music), so I don't use them here.
+For example, adding support for quintuplets (division into 5 parts) would only require adding 4 more fractions ($\frac{1}{5}, \frac{2}{5}, \frac{3}{5}$ and $\frac{4}{5}$), resulting in a constant increase in size ($14=10 + 4$ timesteps), while the traditional approach would mean a 5-fold increase in the total size ($120=3\cdot5\cdot8$ timesteps). More complex tuplets are however much less common (and virtually never used in popular music), so I don't use them here.
 
 It's worth noting that in my approach resulting fractions are not equidistant, meaning that it's not justified to apply convolution along the \emph{note fraction} dimension.
 However, the length of this dimension is not substantial and it's still possible to apply convolution along \emph{bar} and \emph{beat} dimensions, so it's not a big limitation.
@@ -277,7 +282,6 @@ TODO
 
 Convolutions, LSTM.
 
-I use 41 most popular instruments in the dataset (percussion and 40 pitched instruments) covering 90\% of all the sounds in the dataset.
 
 \chapter{Experiments}
 
