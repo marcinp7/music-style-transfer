@@ -188,18 +188,20 @@ Figure \ref{fig:data_flow} depicts the data flow in all three stages.
         \node[tensor] (info) at (0, 0) {song information};
 
         \coordinate (merge) at (3, 1);
-        \coordinate (split) at (4, 1);
+        \coordinate (split) at (3.5, 1);
 
-        \node[tensor] (melody) at (6, 4) {melody};
-        \node[tensor] (rhythm) at (6, 2) {rhythm};
-        \node[tensor] (style) at (6, 0) {style};
+        \node[tensor] (melody) at (5, 4) {melody};
+        \node[tensor] (rhythm) at (5, 2) {rhythm};
+        \node[tensor] (style) at (5, 0) {style};
 
-        \coordinate (merge2) at (8, 1);
-        \coordinate (split2) at (9, 1);
-        \coordinate (merge3) at (10, 3);
+        \coordinate (merge2) at (6.5, 1);
+        \coordinate (split2) at (7, 1);
+        \coordinate (merge3) at (8.5, 3);
+        \coordinate (split3) at (9, 3);
 
-        \node[tensor] (output) at (12, 3) {output\\song content};
-        \node[tensor] (output_info) at (12, 1) {output\\song information};
+        \node[tensor] (pitched_output) at (12, 4) {pitched output\\song content};
+        \node[tensor, dashed] (unpitched_output) at (12, 2) {unpitched output\\song content};
+        \node[tensor] (output_info) at (12, 0) {output\\song information};
 
         \draw[-Latex] (pitched) to (melody);
         \draw (pitched) to [out=0,in=180] (merge);
@@ -215,9 +217,11 @@ Figure \ref{fig:data_flow} depicts the data flow in all three stages.
         \draw (split2) to [out=0,in=180] (merge3);
         \draw (melody) to [out=0,in=180] (merge3);
         \draw[-Latex] (split2) to [out=0,in=180] (output_info);
-        \draw[-Latex] (merge3) to [out=0,in=180] (output);
+        \draw (merge3) to (split3);
+        \draw[-Latex] (split3) to [out=0,in=180] (pitched_output);
+        \draw[-Latex, dashed] (split3) to [out=0,in=180] (unpitched_output);
     \end{tikzpicture}
-    \caption{Data flow of the model (dashed part is optional).}
+    \caption{Data flow of the model (dashed parts are optional).}
     \label{fig:data_flow}
 \end{figure}
 
