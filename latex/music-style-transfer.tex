@@ -5,6 +5,13 @@
 \usepackage{subcaption}
 \usepackage{amsmath}
 
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta}
+\tikzset{
+    every node/.style={align=center,},
+    tensor/.style={draw,rectangle,rounded corners,},
+}
+
 \usepackage{etoolbox}
 \apptocmd{\thebibliography}{\raggedright}{}{}
 
@@ -173,6 +180,48 @@ At this stage the inputs are composition (i.e. melody and rhythm) and style from
 The output is the song content for each of the used instruments.
 Generated song content should conincide with the input from the first stage.
 In other words, the model must reconstruct the original song.
+Figure \ref{fig:data_flow} depicts the data flow in all three stages.
+
+\begin{figure}
+    \centering
+    \begin{tikzpicture}
+        \node[tensor] (pitched) at (0, 4) {pitched\\song content};
+        \node[tensor, dashed] (unpitched) at (0, 2) {unpitched\\song content};
+        \node[tensor] (info) at (0, 0) {song information};
+
+        \coordinate (merge) at (3, 1);
+        \coordinate (split) at (4, 1);
+
+        \node[tensor] (melody) at (6, 4) {melody};
+        \node[tensor] (rhythm) at (6, 2) {rhythm};
+        \node[tensor] (style) at (6, 0) {style};
+
+        \coordinate (merge2) at (8, 1);
+        \coordinate (split2) at (9, 1);
+        \coordinate (merge3) at (10, 3);
+
+        \node[tensor] (output) at (12, 3) {output\\song content};
+        \node[tensor] (output_info) at (12, 1) {output\\song information};
+
+        \draw[-Latex] (pitched) to (melody);
+        \draw (pitched) to [out=0,in=180] (merge);
+        \draw[dashed] (unpitched) to [out=0,in=180] (merge);
+        \draw (info) to [out=0,in=180] (merge);
+        \draw (merge) to (split);
+        \draw[-Latex] (split) to [out=0,in=180] (rhythm);
+        \draw[-Latex] (split) to [out=0,in=180] (style);
+
+        \draw (rhythm) to [out=0,in=180] (merge2);
+        \draw (style) to [out=0,in=180] (merge2);
+        \draw (merge2) to (split2);
+        \draw (split2) to [out=0,in=180] (merge3);
+        \draw (melody) to [out=0,in=180] (merge3);
+        \draw[-Latex] (split2) to [out=0,in=180] (output_info);
+        \draw[-Latex] (merge3) to [out=0,in=180] (output);
+    \end{tikzpicture}
+    \caption{Data flow of the model (dashed part is optional).}
+    \label{fig:data_flow}
+\end{figure}
 
 \chapter{Data representation}
 
