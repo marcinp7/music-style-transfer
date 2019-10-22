@@ -86,7 +86,7 @@ Like in the previous examples, it doesn't allow to transfer style between arbitr
 
 \section{Musical style and composition}
 
-For musical style transfer, the two main notions concerning songs are composition and style.
+For the musical style transfer, the two main notions concerning songs are composition and style.
 I start by giving a rough definition of them.
 
 Composition is any information about a song that is related to a specific moment in time, e.g. if the music gets louder or some instrument starts playing.
@@ -328,10 +328,201 @@ Instead, the model will need to learn some compressed high-level representation 
 
 \chapter{Model}
 
-TODO
+\section{Notation}
 
-Convolutions, LSTM.
+The nodes represent tensors, while the edges represent neural network layers -- standard fully-connected and activation layers, unless specified otherwise.
 
+The $\oplus$ symbol is used to indicate elementwise addition (with broadcasting), and the $++$ symbol indicates concatenation of tensors.
+Since the concatenated tensors often have different shapes, the concatenation is also performed with broadcasting.
+
+\section{Model description}
+
+Figure \ref{fig:style_extraction_model} shows the architecture of the model components in the style extraction stage.
+The first step is encoding the input song content using convolutional and LSTM layers (figure \ref{fig:channels_encoder}).
+The convolution is applied along the \emph{note} dimension, with stride equal to 7 (the number of scale degrees in a single octave).
+This way, the output of the convolutional layer contains information about specific octaves in the song.
+Afterwards, two hierarchical LSTM layers are used for further processing.
+The first LSTM layer is applied along the \emph{beat} dimension (for each bar independently, with beats as timesteps), and the second one along the \emph{bar} dimension.
+They produce the embedding of the song content which is passed to further submodules.
+
+Style encoder uses an LSTM layer to process the generated embedding into a single time-independent vector (figure \ref{fig:style_encoder}).
+Melody and rhythm encoders use both the original content and the generated embedding to produce the output (figures \ref{fig:melody_encoder} and \ref{fig:rhythm_encoder}).
+The two-headed arrow represents a note generating submodule, shown in figure \ref{fig:generating_notes}.
+
+\begin{figure}
+    \centering
+    \subcaptionbox{
+        MIDI channels encoder.
+        The convolution is applied along the \emph{note} dimension, independently for every beat.
+        The first LSTM is applied for beats and the second one for bars.
+        \label{fig:channels_encoder}
+    }{
+        \centering
+        \resizebox{.47\linewidth}{!}{
+            \begin{tikzpicture}
+                \node[tensor] (notes_content) at (0, 2) {Song content\\(notes)};
+                \node[tensor] (octaves_content) at (4, 2) {Song content\\(octaves)};
+                \node[tensor] (beats) at (8, 2) {Beats\\embedding};
+                \node[tensor] (bars) at (12, 2) {Bars\\embedding};
+
+                \node (x) at (0, 0) {};
+
+                \path (notes_content) edge[-Latex] node[above] {conv} (octaves_content);
+                \path (octaves_content) edge[-Latex] node[above] {lstm} (beats);
+                \path (beats) edge[-Latex] node[above] {lstm} (bars);
+            \end{tikzpicture}
+        }
+    }\hfill%
+    \subcaptionbox{
+        Style encoder.
+        \label{fig:style_encoder}
+    }{
+        \centering
+        \resizebox{.47\linewidth}{!}{
+            \begin{tikzpicture}
+                \node[tensor] (bars) at (0, 2) {Song content\\embedding};
+                \node[tensor] (info) at (0, 0) {Song information};
+
+                \node[tensor] (concat) at (4, 2) {$++$};
+
+                \node[tensor] (style) at (6, 2) {Style};
+
+                \path (bars.east) edge[-Latex] node[above] {lstm} (concat);
+                \draw[-Latex] (info.east) to (concat);
+
+                \draw[-Latex] (concat) to (style);
+            \end{tikzpicture}
+        }
+    }
+    \subcaptionbox{
+        Melody encoder.
+        \label{fig:melody_encoder}
+    }{
+        \centering
+        \resizebox{.47\linewidth}{!}{
+            \begin{tikzpicture}
+                \node[tensor] (content) at (0, 3) {Song content};
+                \node[tensor] (content_emb) at (0, 1) {Song content\\embedding};
+        
+                \node[tensor] (concat) at (3, 2) {$++$};
+        
+                \node[tensor] (melody) at (6, 2) {Melody};
+        
+                \draw[-Latex] (content.east) to (concat);
+                \draw [->>] (content_emb.east) to (concat);
+        
+                \draw[-Latex] (concat) to (melody);
+            \end{tikzpicture}
+        }
+    }\hfill%
+    \subcaptionbox{
+        Rhythm encoder.
+        \label{fig:rhythm_encoder}
+    }{
+        \centering
+        \resizebox{.47\linewidth}{!}{
+            \begin{tikzpicture}
+                \node[tensor] (content) at (0, 4) {Song content};
+                \node[tensor] (content_emb) at (0, 2) {Song content\\embedding};
+                \node[tensor] (info) at (0, 0) {Song information};
+        
+                \node[tensor] (concat) at (3, 2) {$++$};
+        
+                \node[tensor] (rhythm) at (6, 2) {Rhythm};
+        
+                \draw[-Latex] (content.east) to (concat);
+                \draw[-Latex] (content_emb.east) to (concat);
+                \draw[-Latex] (info.east) to (concat);
+        
+                \draw[-Latex] (concat) to (rhythm);
+            \end{tikzpicture}
+        }
+    }
+    \caption{Style extraction stage.}
+    \label{fig:style_extraction_model}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \begin{tikzpicture}
+        \node[tensor] (input) at (0, 2) {Input};
+
+        \node[tensor] (octaves) at (3, 3) {Octaves};
+        \node[tensor] (scale_degrees) at (3, 1) {Scale degrees};
+
+        \node[tensor] (plus) at (6, 2) {$\oplus$};
+
+        \node[tensor] (output) at (8, 2) {Output\\(notes)};
+
+        \draw[-Latex] (input.east) to (octaves.west);
+        \draw[-Latex] (input.east) to (scale_degrees.west);
+
+        \draw[-Latex] (octaves.east) to (plus);
+        \draw[-Latex] (scale_degrees.east) to (plus);
+
+        \draw[-Latex] (plus) to (output);
+    \end{tikzpicture}
+    \caption{
+        A submodule used for generating notes.
+        It generates octave-specific and scale degree-specific information separately, before merging them.
+        Such architecture allows the generated notes to depend on the exact octave, while still preserving correlation between different octaves.
+    }
+    \label{fig:generating_notes}
+\end{figure}
+
+Figure \ref{fig:final_stages} shows model architecture in the final two stages.
+
+\begin{figure}
+    \centering
+    \subcaptionbox{
+        Song information model.
+        \label{fig:a}
+    }{
+        \resizebox{.47\linewidth}{!}{
+            \begin{tikzpicture}
+                \node[tensor] (rhythm) at (0, 2) {Rhythm};
+                \node[tensor] (style) at (0, 0) {Style};
+        
+                \node[tensor] (concat) at (3, 2) {$++$};
+        
+                \node[tensor] (output_info) at (6, 2) {Output\\song information};
+        
+                \path (rhythm.east) edge[-Latex] node[above] {lstm} (concat);
+                \draw[-Latex] (style.east) to (concat);
+        
+                \draw[-Latex] (concat) to (output_info);
+            \end{tikzpicture}
+        }
+    }\hfill%
+    \subcaptionbox{
+        Style applier.
+        \label{fig:b}
+    }{
+        \resizebox{.47\linewidth}{!}{
+            \begin{tikzpicture}
+                \node[tensor] (style) at (0, 1) {Style};
+                \node[tensor] (rhythm) at (0, 3) {Rhythm};
+        
+                \node[tensor] (concat) at (3, 2) {$++$};
+                \node[tensor] (melody) at (3, 0) {Melody};
+        
+                \node[tensor] (concat2) at (5, 2) {$++$};
+        
+                \node[tensor] (output) at (8, 2) {Output\\song content};
+        
+                \draw[-Latex] (rhythm.east) to (concat);
+                \draw[-Latex] (style.east) to (concat);
+        
+                \draw[-Latex] (concat) to (concat2);
+                \draw [->>] (melody.east) to (concat2);
+        
+                \draw[-Latex] (concat2) to (output);
+            \end{tikzpicture}
+        }
+    }
+    \caption{Song information prediction (\ref{fig:a}) and style application (\ref{fig:b}) stages.}
+    \label{fig:final_stages}
+\end{figure}
 
 \chapter{Experiments}
 
