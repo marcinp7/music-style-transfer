@@ -1,7 +1,5 @@
 \documentclass[en]{pracamgr}
 
-\usepackage{graphicx}
-\usepackage{caption}
 \usepackage{subcaption}
 \usepackage{amsmath}
 
@@ -405,14 +403,12 @@ In each iteration the input is a random song from the dataset. Figure \ref{fig:t
 
 \begin{figure}
     \centering
-    \begin{subfigure}{.5\linewidth}
-        \includegraphics[width=\linewidth]{figures/training.pdf}
-        \caption{Total loss.}
-    \end{subfigure}%
-    \begin{subfigure}{.5\linewidth}
-        \includegraphics[width=\linewidth]{figures/total.pdf}
-        \caption{Loss components.}
-    \end{subfigure}%
+    \subcaptionbox{Total loss.}{
+        \includegraphics[width=.48\linewidth]{figures/training.pdf}
+    }%
+    \subcaptionbox{Loss components.}{
+        \includegraphics[width=.48\linewidth]{figures/total.pdf}
+    }
     \caption{Total loss and its components during training. As can be seen on the second plot, predicting basic song information is easier than generating music, especially at the beginning of training.}
     \label{fig:total}
 \end{figure}
@@ -427,22 +423,18 @@ To achieve lower unpitched notes loss the model needed to start encoding some us
 
 \begin{figure}
     \centering
-    \begin{subfigure}{\linewidth}
-        \centering
-        \includegraphics[width=.9\linewidth]{figures/pitched.pdf}
-        \caption{Pitched loss components.}
-    \end{subfigure}
-    \begin{subfigure}{\linewidth}
-        \centering
-        \includegraphics[width=.9\linewidth]{figures/notes.pdf}
-        \caption{
-            Comparision of pitched and unpitched notes loss.
-            The red line represents how well the model is playing the percussion, while the blue line represents all the other instruments.
-            We can see that in general pitched instruments are harder than percussion -- at the beginning the model needs some time to start learning to play pitched instruments, and pitched notes loss eventually saturates at higher level than unpitched notes loss.
-            There are however a few hundred iterations during training when the model is actually better at playing pitched instruments than percussion.
-        }
+    \subcaptionbox{Pitched loss components.}{
+        \includegraphics[width=.98\linewidth]{figures/pitched.pdf}
+    }
+    \subcaptionbox{
+        Comparision of pitched and unpitched notes loss.
+        The red line represents how well the model is playing the percussion, while the blue line represents all the other instruments.
+        We can see that in general pitched instruments are harder than percussion -- at the beginning the model needs some time to start learning to play pitched instruments, and pitched notes loss eventually saturates at higher level than unpitched notes loss.
+        There are however a few hundred iterations during training when the model is actually better at playing pitched instruments than percussion.
         \label{fig:pitched_vs_unptiched}
-    \end{subfigure}
+    }{
+        \includegraphics[width=.98\linewidth]{figures/notes.pdf}
+    }
     \caption{Channels loss during training.}
     \label{fig:channels}
 \end{figure}
