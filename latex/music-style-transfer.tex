@@ -108,12 +108,14 @@ The style, on the other hand, is a single vector representing the whole song.
 During training, the model splits the input song into composition and style, and then combines them to recreate the original song.
 Because composition is much smaller than the input song, the model must include useful information in the style vector as well.
 
-After training, I can use the model to extract style from some song and combine it with the composition extracted from other song.
+After training, I can use the model to extract style from a song and combine it with the composition extracted from another song.
 The hypothesis is that this approach will allow for a sensible music style transfer.
 
 \section{Results}
 
-TODO
+I've been able to achieve interesting results, resulting in a neural network that is able to create new arrangements of songs, as expected.
+The exact characteristics of generated music varies, from very simple changes in used instruments, to generating a song that is almost unrecognizable from the original, but always souding like an actual music.
+I consider the results to be satisfying, although there are some areas for further improvement -- the generated music sometimes doesn't sound completely natural, and the model is not providing an impressive style transfer for 
 
 \chapter{Framework}
 
