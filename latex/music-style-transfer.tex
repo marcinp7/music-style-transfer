@@ -536,6 +536,16 @@ Figure \ref{fig:final_stages} shows model architecture in the final two stages.
     \label{fig:final_stages}
 \end{figure}
 
+\section{Melody and rhythm size}
+
+The most important hyperparameters in this architecture are melody and rhythm embedding sizes, which were set to values 8 and 32 respectively.
+Recall that the number of features per note for pitched instruments is equal to 5, which means that
+the melody has a slightly bigger size than a single pitched instrument (but needs to encode \emph{all} pitched instruments used in a song).
+The melody contains embedding for each note, as opposed to the rhyhm, so the size of the rhythm embedding can be set to a higher value than the melody.
+
+Increasing the size of the melody and/or rhythm embeddings would lead to a better reconstruction of songs but a worse style transfer, since the model could then easily overfit by remembering more features in the composition, effectively ignoring the style vector.
+Thereforce, composition embeddings should be kept rather small for this architecture, to prevent overfitting.
+
 \chapter{Experiments}
 
 \section{Loss function}
