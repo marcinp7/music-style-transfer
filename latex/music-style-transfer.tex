@@ -2,6 +2,7 @@
 
 \usepackage{subcaption}
 \usepackage{amsmath}
+\usepackage{url}
 
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta}
@@ -35,7 +36,7 @@
   Arts and humanities\\
   Sound and music computing}
 
-\keywords{style transfer, music, midi, neural networks}
+\keywords{style transfer, music generation, midi, neural networks, recurrent neural networks, convolutional neural networks}
 
 \newtheorem{defi}{Definicja}[section]
 
@@ -283,7 +284,8 @@ Note features for pitched instruments are:
     \item accidentals (raise or lower the note one semitone)
 \end{itemize}
 
-For percussion the only note features are velocity and duration.
+Accidentals are represented using one-hot encoding with vector of length 3 (raise the note, lower the note, or play the note unmodified), which gives a total of 5 features per note for pitched instruments.
+For percussion the only note features are velocity and duration, which gives 2 features per note.
 
 \section{Notes representation}
 
@@ -335,6 +337,7 @@ Instead, the model will need to learn some compressed high-level representation 
 \section{Notation}
 
 The nodes represent tensors, while the edges represent neural network layers -- standard fully-connected and activation layers, unless specified otherwise.
+Leaky ReLUs are used as activation functions.
 
 The $\oplus$ symbol is used to indicate elementwise addition (with broadcasting), and the $++$ symbol indicates concatenation of tensors.
 Since the concatenated tensors often have different shapes, the concatenation is also performed with broadcasting.
@@ -593,8 +596,10 @@ Then, the normalized components are averaged using quadratic mean to yield the t
 
 \section{Training}
 
-The model was trained for 2000 iterations using the Adam optimizer \cite{adam}.
-In each iteration the input is a random song from the dataset. Figure \ref{fig:total} shows total loss during training, while figures \ref{fig:channels} and \ref{fig:song_info} show specific components of the loss function. All the plots are smoothed using exponential moving average with momentum parameter equal to .99 and initial bias equal to 1 (maximum possible error).
+The model was trained for 5000 iterations using the Adam optimizer \cite{adam}.
+In each iteration the input is a random song from the dataset.
+Figure \ref{fig:total} shows total loss during training, while figures \ref{fig:channels} and \ref{fig:song_info} show specific components of the loss function.
+All the plots are smoothed using exponential moving average with momentum parameter equal to .99 and initial bias equal to 1 (i.e. maximum possible error).
 
 \begin{figure}
     \centering
