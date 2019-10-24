@@ -664,24 +664,46 @@ The fully-trained model can nevertheless generate percussion that is relatively 
     \label{fig:song_info}
 \end{figure}
 
+\section{Reconstructing the song}
+
+The neural network can fairly easy reconstruct the song in a way that is immediately recognizable, although often with some differences.
+It's very common for the model to change the exact instrument that is playing some part, for example changing an electric guitar to an acoustic one, or even piano to guitar, especially if there are many instruments used in the song.
+These are not a big problems for the style transfer, however, since changing the original song is our goal.
+
 \section{Style transfer}
 
-TODO
+The trained model can be used to transfer style between songs.
+To do this, the model needs to extract the composition from one song and the style from the other.
+Then, the resulting composition and style are used to predict song information (i.e. mode, tempo and used instruments) and generate the content of the predicted instruments.
 
-After training, the model is used to extract style and composition from two songs and then generate songs from these compositions but with switched styles.
+The first, most obvious application is to do the exact same thing as for the image style transfer, i.e. having two songs transfer the style from one to the other.
+It can be done both ways at once, therefore doing a "style switch": generating song A in a style of song B, and song B in a style of song A.
+In practice however it's much more informative to apply different styles to the same song, to see how they compare.
+
+I used various groups of usually four songs (one for composition and three as style sources) to test the style transfer.
+The quality of the results varies depending on the exact songs.
+In some cases the generated music sounds unnatural, with a sudden changes in loudness, but in other instances the results are quite naturally-sounding.
+For some songs the style transfer is mostly switching tempo and using different instruments for melody, but there are cases when it creates a completely differently sounding arrangement.
+
+% \subsection{One instruments vs. many instruments}
+
 
 \begin{thebibliography}{99}
 \addcontentsline{toc}{chapter}{Bibliography}
 
-\bibitem{neural_translation} Iman Malik, Carl Henrik Ek, \textit{Neural Translation of Musical Style}, https://arxiv.org/abs/1708.03535.
+\bibitem{image_style_transfer} Leon A. Gatys, Alexander S. Ecker, Matthias Bethge, \textit{Image Style Transfer Using Convolutional Neural Networks}, \url{https://www.cv-foundation.org/openaccess/content_cvpr_2016/papers/Gatys_Image_Style_Transfer_CVPR_2016_paper.pdf}.
 
-\bibitem{cyclegan} Gino Brunner, Yuyi Wang, Roger Wattenhofer, Sumu Zhao, \textit{Symbolic Music Genre Transfer with CycleGAN}, https://arxiv.org/abs/1809.07575.
+\bibitem{music_generation} Piotr Kozakowski, Bartosz Michalak, \textit{Music generation using artificial neural networks}.
 
-\bibitem{multimodal} Chien-Yu Lu, Min-Xin Xue, Chia-Che Chang, Che-Rung Lee, Li Su, \textit{Play as You Like: Timbre-enhanced Multi-modal Music Style Transfer}, https://arxiv.org/abs/1811.12214.
+\bibitem{neural_translation} Iman Malik, Carl Henrik Ek, \textit{Neural Translation of Musical Style}, \url{https://arxiv.org/abs/1708.03535}.
 
-\bibitem{clara} Christine Payne, OpenAI Scholars Program, \textit{Clara: Generating Polyphonic and Multi-Instrument Music Using an AWD-LSTM Architecture}, http://www.christinemcleavey.com/files/clara-musical-lstm.pdf.
+\bibitem{cyclegan} Gino Brunner, Yuyi Wang, Roger Wattenhofer, Sumu Zhao, \textit{Symbolic Music Genre Transfer with CycleGAN}, \url{https://arxiv.org/abs/1809.07575}.
 
-\bibitem{adam} Diederik P. Kingma, Jimmy Ba, \textit{Adam: A Method for Stochastic Optimization}, https://arxiv.org/abs/1412.6980.
+\bibitem{multimodal} Chien-Yu Lu, Min-Xin Xue, Chia-Che Chang, Che-Rung Lee, Li Su, \textit{Play as You Like: Timbre-enhanced Multi-modal Music Style Transfer}, \url{https://arxiv.org/abs/1811.12214}.
+
+\bibitem{clara} Christine Payne, OpenAI Scholars Program, \textit{Clara: Generating Polyphonic and Multi-Instrument Music Using an AWD-LSTM Architecture}, \url{http://www.christinemcleavey.com/files/clara-musical-lstm.pdf}.
+
+\bibitem{adam} Diederik P. Kingma, Jimmy Ba, \textit{Adam: A Method for Stochastic Optimization}, \url{https://arxiv.org/abs/1412.6980}.
 
 \end{thebibliography}
 
