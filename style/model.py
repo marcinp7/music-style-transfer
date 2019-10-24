@@ -524,7 +524,6 @@ class SongInfoModel(nn.Module):
 
         x = cat_with_broadcast([x1, x2], -1)  # (batch, features)
         x = self.instruments_linear(x)  # (batch, features)
-        x = torch.sigmoid(x)
         return x
 
     def predict_mode(self, style, rhythm_features):
@@ -898,7 +897,7 @@ def get_song_info_loss(input, target):
     input_instruments, input_bpm, input_mode = input
     target_instruments, target_bpm, target_mode = target
 
-    instruments_loss = F.binary_cross_entropy(input_instruments, target_instruments)
+    instruments_loss = F.binary_cross_entropy_with_logits(input_instruments, target_instruments)
     mode_loss = F.cross_entropy(input_mode, target_mode.argmax(1))
     bpm_loss = ((input_bpm - target_bpm) / bpm_range) ** 2
     return instruments_loss, mode_loss, bpm_loss
