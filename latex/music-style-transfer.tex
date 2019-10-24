@@ -58,12 +58,24 @@
 \chapter{Introduction}
 
 Transfer of style between images is a well-known problem.
-Currently it can be realized between any two images by using convolutional neural networks.
+Currently, it can be realized between any two images by using convolutional neural networks \cite{image_style_transfer}.
 The analogous style transfer done for music is a much less explored topic and it is challenging even to define what exactly a musical style is.
+
+\section{Goal statement}
 
 In this paper the goal is to define some sensible notion of musical style and create a model that can create a different arrangement for any song based on style extracted from any other song.
 The music used for training is assumed to be in the MIDI format and can use any range of instruments.
 The instruments supported by the model must be set during training, but the supported styles do not -- we want the trained model to be able to extract style from any song.
+
+Note that music generation is often done on raw waveform, most typically using spectrograms and frourier analyzis, as in \cite{music_generation}.
+In this work however, I state the problem of music style transfer only concerning MIDI format for two reasons.
+
+\begin{enumerate}
+    \item Direct generating of realistically sounding music is in itself a hard problem, which I don't want to tackle here.
+    \item
+    MIDI format provides more structured data than raw sounds -- the input is divided as separate instruments, we have exact information about which notes are played when.
+    Thus, working with MIDI files I can focus solely on the style transfer, which makes the task much easier.
+\end{enumerate}
 
 \chapter{Other works}
 
