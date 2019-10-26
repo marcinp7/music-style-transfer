@@ -31,7 +31,7 @@
 %Podać dziedzinę wg klasyfikacji Socrates-Erasmus:
 \dziedzina{11.4 Artificial Intelligence}
 
-%Klasyfikacja tematyczna wedlug AMS (matematyka) lub ACM (informatyka)
+%Klasyfikacja tematyczna według AMS (matematyka) lub ACM (informatyka)
 \klasyfikacja{Applied computing\\
   Arts and humanities\\
   Sound and music computing}
@@ -43,16 +43,15 @@
 \begin{document}
 \maketitle
 
-%tu idzie streszczenie na strone poczatkowa
 \begin{abstract}
-    The goal of this work is to create a neural architecture that allows for creating a new arrangement of any song in the MIDI format, based on the style extracted from another song.
+    The goal of this work is to create a neural network architecture enabling to create a new arrangement of any song in the MIDI format based on the style extracted from another song.
     I'm using an architecture based on LSTM layers as time-processing units, also utilizing convolutions.
     I define the notion of musical style and composition and train a model that is able to split and later merge them.
-    This results in a symbolic music style transfer that supports a wide range of musical instruments and is in general much less restrictive than other most popular current solutions.
+    This results in a symbolic music style transfer that supports a wide range of musical instruments and does not require the musical styles to be predefined during training, which makes it much less restrictive than many other solutions.
 \end{abstract}
 
 \tableofcontents
-%\listoffigures
+\listoffigures
 %\listoftables
 
 \chapter{Introduction}
@@ -63,40 +62,44 @@ The analogous style transfer done for music is a much less explored topic and it
 
 \section{Goal statement}
 
-In this paper the goal is to define some sensible notion of musical style and create a model that can create a different arrangement for any song based on style extracted from any other song.
+In this paper the goal is to define a sensible notion of musical style, and create a model that can create a different arrangement for any song based on style extracted from any other song.
 The music used for training is assumed to be in the MIDI format and can use any range of instruments.
 The instruments supported by the model must be set during training, but the supported styles do not -- we want the trained model to be able to extract style from any song.
 
-Note that music generation is often done on raw waveform, most typically using spectrograms and frourier analyzis, as in \cite{music_generation}.
-In this work however, I state the problem of music style transfer only concerning MIDI format for two reasons.
+Note that other common approach to music generation is to perform it on raw waveform, most typically working with spectrograms and utilizing Fourier Transform, as in \cite{music_generation}.
+In this work however, I only consider the problem of music style transfer using the MIDI format.
+Using the MIDI format, as opposed to the raw audio, has two main advantages:
 
 \begin{enumerate}
-    \item Direct generating of realistically sounding music is in itself a hard problem, which I don't want to tackle here.
     \item
-    MIDI format provides more structured data than raw sounds -- the input is divided as separate instruments, we have exact information about which notes are played when.
+    MIDI format provides more structured data than raw sound -- the input is divided into channels serving as separate instruments, and for each instrument we have the exact information on which notes are played and when.
     Thus, working with MIDI files I can focus solely on the style transfer, which makes the task much easier.
+    \item
+    Direct generating of realistically sounding music is in itself a hard problem.
+    Here I'm assuming that the goal is to generate a MIDI file, which can later be converted into audio using any available synthesizer.
 \end{enumerate}
 
-\chapter{Other works}
+\section{Other works}
 
 There exist previous works doing music style transfer to some extent.
 A few examples are shortly described below.
-All of them, however, are performing a simpler kind of a style transfer.
+All of them, however, are performing a simpler kind of a style transfer or have some significant limitations.
 
-\section{Neural Translation of Musical Style}
+\subsection{Neural Translation of Musical Style}
 
-In Neural Translation of Musical Style \cite{neural_translation} authors created a model than can learn to perform any given piano piece in either jazz or classical style.
+In Neural Translation of Musical Style \cite{neural_translation} the authors created a model than can learn to perform any given piano piece in either jazz or classical style.
 The model does this by regression of notes' velocities (loudness), so it's effectively creating an interpretation of a given piano piece.
-Therefore it's much simpler, because it only supports one instrument (piano) and cannot create a completely different arrangement.
+The main limitations of this solution is that it only supports one instrument (piano) and cannot create a completely different arrangement.
 
-\section{Symbolic Music Genre Transfer with CycleGAN}
+\subsection{Symbolic Music Genre Transfer with CycleGAN}
 
-In Symbolic Music Genre Transfer with CycleGAN \cite{cyclegan} the described model can create new arrangements but it can still only generate piano and the styles need to be set during training (in this case it's jazz, classic and pop).
+In Symbolic Music Genre Transfer with CycleGAN \cite{cyclegan} the described model can create new arrangements but the styles need to be set during training (in this case it's jazz, classic and pop).
+Also, similarly as in the previous work, it can still only generate piano, and does not support multiple instruments.
 
-\section{Play as You Like: Timbre-enhanced Multi-modal Music Style Transfer}
+\subsection{Play as You Like: Timbre-enhanced Multi-modal Music Style Transfer}
 
-In Timbre-enhanced Multi-modal Music Style Transfer \cite{multimodal} the model can operate on different instruments, but the styles still need to be set during training (the styles are actually instruments, the authors are using guitar, piano and string quartet).
-Like in the previous examples, it doesn't allow to transfer style between arbitrary songs.
+In Timbre-enhanced Multi-modal Music Style Transfer \cite{multimodal} the model can operate on different instruments, but here the main limitation is that the styles need to be set during training (the styles are actually instruments; the authors are using guitar, piano and string quartet).
+Therefore, like in the previous examples, this solution doesn't allow to transfer style between arbitrary songs.
 
 \chapter{Overview and results}
 
@@ -121,13 +124,13 @@ During training, the model splits the input song into composition and style, and
 Because composition is much smaller than the input song, the model must include useful information in the style vector as well.
 
 After training, I can use the model to extract style from a song and combine it with the composition extracted from another song.
-The hypothesis is that this approach will allow for a sensible music style transfer.
+My hypothesis is that this approach will allow for a sensible music style transfer.
 
 \section{Results}
 
-I've been able to achieve interesting results, resulting in a neural network that is able to create new arrangements of songs, as expected.
-The exact characteristics of generated music varies, from very simple changes in used instruments, to generating a song that is almost unrecognizable from the original, but always souding like an actual music.
-I consider the results to be satisfying, although there are some areas for further improvement -- the generated music sometimes doesn't sound completely natural, and the model is not providing an impressive style transfer for 
+Using this approach I've been able to achieve interesting results, obtaining a model that can create the new arrangements of given songs, as expected.
+The exact characteristics of the generated music varies, from very simple changes in used instruments, to generating a song that is almost unrecognizable from the original, but always sounding like an actual music.
+The quality of the generated music also varies. Sometimes it doesn't sound completely natural, but altogether I consider the results to be satisfying.
 
 \chapter{Framework}
 
@@ -138,12 +141,12 @@ The machine learning framework I use is PyTorch, along with mido -- a Python lib
 
 \section{Data}
 
-The dataset I use is Lakh MIDI Dataset\footnote{https://colinraffel.com/projects/lmd/}.
-It contains over 100,000 songs in the MIDI format and covers various genres, including pop, rock or classical.
+The dataset I use is The Lakh MIDI Dataset\footnote{https://colinraffel.com/projects/lmd/}.
+It contains over 100,000 songs in the MIDI format and covers various genres, including pop, rock or classical music.
 
 \chapter{Data flow}
 
-The data flow of the whole architecture is composed of 3 stages: style extraction, predicting song information, and style application.
+The data flow of the whole architecture is composed of 3 stages: style extraction, prediction of song information, and style application.
 
 \section{Style extraction}
 
@@ -155,7 +158,7 @@ The input in the first stage is:
         \item mode of a song (major or minor)
         \item tempo (in beats per minute)
     \end{itemize}
-    \item song content (information about which notes are played in any moment in time for any instrument used in a song)
+    \item song content (information which notes are played at any moment in time for any instrument used in a song)
 \end{itemize}
 
 Mode and used instruments are represented using one-hot encoding.
@@ -166,15 +169,15 @@ The output is composed of 3 parts: melody, rhythm and style.
 Each of them contains features as learnable embeddings.
 I will refer to melody and rhythm as composition.
 
-Melody should encode song content (like the input) but with no information about specific instruments (it must combine them).
-It encodes all pitched instruments used in a song.
+Melody should encode song content (like the input) but with no information about specific instruments.
+Therefore, it must combine and encode all pitched instruments used in a song.
 
 Rhythm contains additional information about the melody (but not explicitly related to specific notes) and features of percussion if it is present in the input song.
-The main reason for introducing rhythm alongside melody is to be able to represent percussion (the only unpitched instrument) but at the same time do not force it if it's not present in the original song (the model should be able to add percussion to a song that originally didn't have it).
+The main reason for introducing rhythm alongside melody is to be able to represent percussion (the only unpitched instrument) but at the same time do not force it if it's not present in the original song.
+The model should be able to add percussion to a song that originally didn't have it.
 
 I require that there is always at least one pitched instrument used in a song, while the percussion is optional.
-That way both melody and rhythm are always well-definied (there is at least one pitched instrument they can encode).
-
+That way both melody and rhythm are always well-defined (there is at least one pitched instrument they can encode).
 Melody and rhythm, along with the style, should enable to recreate all the instruments used in a song.
 
 \section{Prediction of song information}
@@ -194,7 +197,7 @@ Note that the set of supported instruments can be arbitrarily large but needs to
 
 At this stage the inputs are composition (i.e. melody and rhythm) and style from the first stage.
 The output is the song content for each of the used instruments.
-Generated song content should conincide with the input from the first stage.
+The generated song content should coincide with the input from the first stage.
 In other words, the model must reconstruct the original song.
 Figure \ref{fig:data_flow} depicts the data flow in all three stages.
 
@@ -261,26 +264,27 @@ The \emph{bar}, \emph{beat} and \emph{beat fraction} dimensions point to the exa
 
 \subsection{Specifying time}
 
-I assume that the time signature cannot change, so that the number of the beats is constant throughout the song (usually 3 or 4).
+I assume that the time signature cannot change, i.e. the number of the beats in a bar is constant throughout the song (usually 3 or 4).
 The \emph{bar} and \emph{beat} dimensions denote in which bar and at which beat the note should play.
 The \emph{beat fraction} dimension is specifying the exact moment during the beat.
 
 I divide the beat into 8 parts, which gives 8 possible fractions: $0, \frac{1}{8}, \frac{2}{8}, \ldots, \frac{7}{8}$.
 Independently, I also divide the beat into 3 parts: $0, \frac{1}{3}, \frac{2}{3}$.
-Combining it, symplifying and sorting, we get 10 different fractions:
+Combining it, simplifying and sorting, we get 10 different fractions:
+
 $$
 0, \frac{1}{8}, \frac{1}{4}, \frac{1}{3}, \frac{3}{8}, \frac{1}{2}, \frac{5}{8}, \frac{3}{4}, \frac{2}{3}, \frac{7}{8}.
 $$
 
 Each \emph{note fraction} coordinate represents one of those fractions.
 A single beat most commonly has length of a quarter note, which means that fractions with denominator 8 allow to represent up to 32th notes.
-While division into powers of 2 is the most common in music, many songs also use division into three parts, called triplets.
+While division into powers of 2 is the most common in music, many songs also use division into three parts (triplets).
 Inclusion of fractions with denominator 3 allows for the exact representation of them, which otherwise would need to be approximated using fractions with denominator 8.
 More fractions could be added to allow for representing faster melodies, but these 10 are enough for most songs.
 
 The typical way of splitting the beat in neural music generation is to simply divide it into timesteps of equal length, e.g. into 12 parts \cite{clara}.
 The downside of this approach is that it creates many "unnecessary" fractions (like $\frac{1}{12}$), which are not typically used, so they mainly only increase the size of the MIDI file representation.
-The increase in the size is quite significant, since being able to represent 32th notes using this approach would require denominator $24=3\cdot8$, resulting in the whole input being over two times bigger.
+The increase in the size is quite significant, since being able to represent 32th notes using this approach would require the denominator of $24=3\cdot8$, resulting in the whole input being over two times bigger.
 Here I only introduce the fractions that are necessary to represent triplets ($\frac{1}{3}$ and $\frac{2}{3}$), omitting the rest.
 
 The proposed approach also scales well with addition of more tuplets.
@@ -289,22 +293,7 @@ For example, adding support for quintuplets (division into 5 parts) would only r
 It's worth noting that in my approach resulting fractions are not equidistant, meaning that it's not justified to apply convolution along the \emph{note fraction} dimension.
 However, the length of this dimension is not substantial and it's still possible to apply convolution along \emph{bar} and \emph{beat} dimensions, so it's not a big limitation.
 
-\subsection{Note features}
-
-The above format is used for both percussion and pitched instruments.
-However, the number of notes and note features (lengths of dimensions \emph{note} and \emph{note features} respectively) is different for percussion and for pitched instruments, so two tensors must be used: one for pitched instruments and one (possibly empty) for percussion.
-
-Note features for pitched instruments are:
-\begin{itemize}
-    \item velocity (loudness)
-    \item duration
-    \item accidentals (raise or lower the note one semitone)
-\end{itemize}
-
-Accidentals are represented using one-hot encoding with vector of length 3 (raise the note, lower the note, or play the note unmodified), which gives a total of 5 features per note for pitched instruments.
-For percussion the only note features are velocity and duration, which gives 2 features per note.
-
-\section{Notes representation}
+\subsection{Notes representation}
 
 I use note's span of 8 octaves, each with 12 sounds, which gives 96 possible notes in total.
 The notes are represented as one-hot encoded vectors with a slight modification.
@@ -325,6 +314,21 @@ Then we can represent all 12 notes in each octave.
 
 The downside of this solution is that it requires the scale of the song to be known -- and finding it is in itself not a trivial problem.
 I use fairly simple heuristics based on the Krumhansl-Schmuckler key-finding algorithm\footnote{http://rnhart.net/articles/key-finding/}, which predicts the scale of the song based on the frequency of notes used.
+
+\subsection{Note features}
+
+The same format is used for both percussion and pitched instruments.
+However, the number of notes and note features (i.e. lengths of dimensions \emph{note} and \emph{note features} respectively) is different for percussion and for pitched instruments, so two tensors must be used: one for pitched instruments and one (possibly empty) for percussion.
+
+Note features for pitched instruments are:
+\begin{itemize}
+    \item velocity (loudness)
+    \item duration
+    \item accidentals (raise or lower the note one semitone)
+\end{itemize}
+
+Accidentals are represented using one-hot encoding with vector of length 3 (raise the note, lower the note, or play the note unmodified), which gives a total of 5 features per note for pitched instruments.
+For percussion the only note features are velocity and duration, which gives 2 features per note.
 
 \section{Style and composition representation}
 
@@ -353,8 +357,8 @@ Instead, the model will need to learn some compressed high-level representation 
 
 \section{Notation}
 
-The nodes represent tensors, while the edges represent neural network layers -- standard fully-connected and activation layers, unless specified otherwise.
-Leaky ReLUs are used as activation functions.
+In the following diagrams the nodes represent tensors, while the edges represent neural network layers -- standard fully-connected and activation layers, unless specified otherwise.
+Leaky ReLUs are used as activation functions throughout the model, except for the output activations, which are standard sigmoid.
 
 The $\oplus$ symbol is used to indicate elementwise addition (with broadcasting), and the $++$ symbol indicates concatenation of tensors.
 Since the concatenated tensors often have different shapes, the concatenation is also performed with broadcasting.
@@ -366,19 +370,18 @@ The first step is encoding the input song content using convolutional and LSTM l
 The convolution is applied along the \emph{note} dimension, with stride equal to 7 (the number of scale degrees in a single octave).
 This way, the output of the convolutional layer contains information about specific octaves in the song.
 Afterwards, two hierarchical LSTM layers are used for further processing.
-The first LSTM layer is applied along the \emph{beat} dimension (for each bar independently, with beats as timesteps), and the second one along the \emph{bar} dimension.
-They produce the embedding of the song content which is passed to further submodules.
+The first LSTM layer is applied along the \emph{beat} dimension (for each bar independently, with beats as timesteps), and then the second one along the \emph{bar} dimension.
+They produce an embedding of the song content which is then passed to the other submodules.
 
 Style encoder uses an LSTM layer to process the generated embedding into a single time-independent vector (figure \ref{fig:style_encoder}).
 Melody and rhythm encoders use both the original content and the generated embedding to produce the output (figures \ref{fig:melody_encoder} and \ref{fig:rhythm_encoder}).
-The two-headed arrow represents a note generating submodule, shown in figure \ref{fig:generating_notes}.
 
 \begin{figure}
     \centering
     \subcaptionbox{
         MIDI channels encoder.
         The convolution is applied along the \emph{note} dimension, independently for every beat.
-        The first LSTM is applied for beats and the second one for bars.
+        The first LSTM is applied for beats as timesteps, and the second one for bars.
         \label{fig:channels_encoder}
     }{
         \centering
@@ -462,7 +465,10 @@ The two-headed arrow represents a note generating submodule, shown in figure \re
             \end{tikzpicture}
         }
     }
-    \caption{Style extraction stage.}
+    \caption{
+        Style extraction stage.
+        The two-headed arrow represents a note generating submodule shown in figure \ref{fig:generating_notes}.
+    }
     \label{fig:style_extraction_model}
 \end{figure}
 
@@ -550,13 +556,13 @@ Figure \ref{fig:final_stages} shows model architecture in the final two stages.
 
 \section{Melody and rhythm size}
 
-The most important hyperparameters in this architecture are melody and rhythm embedding sizes, which were set to values 8 and 32 respectively.
+The most important hyperparameters are melody and rhythm embedding sizes, which were set to values 8 and 32 respectively.
 Recall that the number of features per note for pitched instruments is equal to 5, which means that
 the melody has a slightly bigger size than a single pitched instrument (but needs to encode \emph{all} pitched instruments used in a song).
-The melody contains embedding for each note, as opposed to the rhyhm, so the size of the rhythm embedding can be set to a higher value than the melody.
+The melody contains embedding for each note, as opposed to the rhythm, so the size of the rhythm embedding can be set to a higher value than the melody.
 
-Increasing the size of the melody and/or rhythm embeddings would lead to a better reconstruction of songs but a worse style transfer, since the model could then easily overfit by remembering more features in the composition, effectively ignoring the style vector.
-Thereforce, composition embeddings should be kept rather small for this architecture, to prevent overfitting.
+Increasing the size of the melody and/or rhythm embeddings would lead to a better reconstruction of songs but a potentially worse style transfer, since the model could then easily overfit by remembering more features in the composition, effectively ignoring the style vector.
+Therefore, composition embeddings should be kept rather small for this architecture.
 
 \chapter{Experiments}
 
@@ -594,14 +600,8 @@ The loss function measures if the song generated by the model is the same as the
 This hierarchy signifies that the total loss is the average of channels loss and song information loss, channels loss is the average of pitched and unpitched channels loss, etc.
 
 Notes loss is measuring if the model is generating the right sounds.
-Since the desired output is greatly unbalanced (most of all the possible notes will not be played), I'm using a complement of smooth F1 score to measure notes loss:
-\nopagebreak
-
-\begin{equation}
-    \textrm{notes loss} = 1 - F_1.
-\end{equation}
-
-Smooth $F_1$ score is definied in a standard way, using
+Since the desired output is greatly unbalanced (most of all the possible notes will not be played), I'm using a smooth F1 score to measure notes loss.
+Smooth $F_1$ score is defined in a standard way, using
 \nopagebreak
 \begin{align}
     & \textrm{true positive} = \min(p, t), \\
@@ -612,11 +612,16 @@ Smooth $F_1$ score is definied in a standard way, using
 where $p,t\in[0,1]$ are prediction and ground truth respectively, interpreted as fuzzy logical values.
 In case when $p$ and $t$ can only take discrete values of 0 or 1, this gives a standard definition of the $F_1$ score.
 Thus, it is a generalization of the $F_1$ score compatible with gradient descent.
-In our case the notes' fuzzy logical values are defined from velocity (1 meaning that the note is played with maximum possible velocity, and 0 meaning that the note is not played at all).
+In our case, the notes' fuzzy logical values are defined from velocity (1 if the note is played with maximum possible velocity, and 0 if the note is not played at all).
+
+The notes loss is then defined as the complement of the smooth $F_1$ score:
+\begin{equation}
+    \textrm{notes loss} = 1 - F_1.
+\end{equation}
 
 Velocity loss measures if the model is generating notes with the right loudness.
 Velocity is already measured by the notes loss (acquiring maximum $F_1$ score requires playing with exactly right velocities), so this loss function provides additional, more explicit component measuring the velocity error.
-It only takes into account the notes that should be played to avoid problems with unbalanced output (the same is true for duration loss).
+To avoid problems with unbalanced output, it only takes into account the notes that should be played (the same is true for duration loss).
 
 Since different kinds of loss functions have different magnitudes, before averaging, all the components are normalized to take values in the $[0,1]$ interval.
 Then, the normalized components are averaged using quadratic mean to yield the total loss. The use of quadratic mean instead of arithmetic promotes minimizing the components that have the greatest value, resulting in a more balanced training.
@@ -626,7 +631,7 @@ Then, the normalized components are averaged using quadratic mean to yield the t
 The model was trained for 5000 iterations using the Adam optimizer \cite{adam}.
 In each iteration the input is a random song from the dataset.
 Figure \ref{fig:total} shows total loss during training, while figures \ref{fig:channels} and \ref{fig:song_info} show specific components of the loss function.
-All the plots are smoothed using exponential moving average with momentum parameter equal to .99 and initial bias equal to 1 (i.e. maximum possible error).
+All the plots are smoothed using exponential moving average with momentum parameter equal to .99 and initial bias equal to 1 (i.e. the maximum possible error).
 
 \begin{figure}
     \centering
@@ -640,8 +645,8 @@ All the plots are smoothed using exponential moving average with momentum parame
     \label{fig:total}
 \end{figure}
 
-Figure \ref{fig:pitched_vs_unptiched} shows how pitched and unpitched notes losses compare during trainig.
-We can see that the model needs around 100 iterations to start learning pitched instruments (with the pitched notes barely below 1), during which time the unpitched loss is already significantly lower (around .7).
+Figure \ref{fig:pitched_vs_unptiched} shows how pitched and unpitched notes losses compare during training.
+We can see that the model needs around 100 iterations to start learning pitched instruments (with the pitched loss barely below 1), during which time the unpitched loss is already significantly lower (around .7).
 This can be explained by the fact that percussion is in general more repetitive than pitched instruments, so it's possible to achieve that level of the unpitched loss by mostly repeating the most common drum patterns.
 This hypothesis can be confirmed by listening to the music generated by the snapshot of the model near the beginning of the training (for example at the iteration 300, when the unpitched notes loss shortly flattens at the level of .7).
 As it turns out, the generated percussion is indeed very basic, featuring only some typical drum patters found in most of the pop/rock music.
@@ -678,9 +683,9 @@ The fully-trained model can nevertheless generate percussion that is relatively 
 
 \section{Reconstructing the song}
 
-The neural network can fairly easy reconstruct the song in a way that is immediately recognizable, although often with some differences.
-It's very common for the model to change the exact instrument that is playing some part, for example changing an electric guitar to an acoustic one, or even piano to guitar, especially if there are many instruments used in the song.
-These are not a big problems for the style transfer, however, since changing the original song is our goal.
+The trained neural network can fairly easily reconstruct any song in a way that is immediately recognizable, although often with some differences.
+It's very common for the model to change the exact instrument that is playing some part, for example changing electric guitar to acoustic, or even piano to guitar, especially if there are many instruments used in the song.
+These are not a big problems for the style transfer, however, since modifying the original song is our goal.
 
 \section{Style transfer}
 
