@@ -66,6 +66,15 @@ In this paper the goal is to define a sensible notion of musical style, and crea
 The music used for training is assumed to be in the MIDI format and can use any range of instruments.
 The instruments supported by the model must be set during training, but the supported styles do not -- we want the trained model to be able to extract style from any song.
 
+In summary, I aim for the model that:
+
+\begin{itemize}
+    \item Supports multiple instruments and is able to change them, if necessary
+    \item Supports various time signatures (most importantly $4\atop4$ and $3\atop4$)
+    \item Is able to change the tempo and the mode of the song (major or minor)
+    \item Is able to extract the style from any song (in particular the supported styles are not hard-set during training)
+\end{itemize}
+
 Note that other common approach to music generation is to perform it on raw waveform, most typically working with spectrograms and utilizing Fourier Transform, as in \cite{music_generation}.
 In this work however, I only consider the problem of music style transfer using the MIDI format.
 Using the MIDI format, as opposed to the raw audio, has two main advantages:
@@ -375,6 +384,7 @@ They produce an embedding of the song content which is then passed to the other 
 
 Style encoder uses an LSTM layer to process the generated embedding into a single time-independent vector (figure \ref{fig:style_encoder}).
 Melody and rhythm encoders use both the original content and the generated embedding to produce the output (figures \ref{fig:melody_encoder} and \ref{fig:rhythm_encoder}).
+Note that the use of LSTM layers as time-processing units allows for any number of bars and beats per bar in the input song. In particular, any time signature is supported.
 
 \begin{figure}
     \centering
@@ -664,7 +674,7 @@ The fully-trained model can nevertheless generate percussion that is relatively 
     \subcaptionbox{
         Comparision of pitched and unpitched notes loss.
         The red line represents how well the model is playing the percussion, while the blue line represents all the other instruments.
-        We can see that in general pitched instruments are harder than percussion.
+        We can see that in general pitched instruments are harder than drums.
         There are however a few hundred iterations during training when the model is actually slightly better at playing pitched instruments than percussion.
         \label{fig:pitched_vs_unptiched}
     }{
@@ -689,21 +699,30 @@ These are not a big problems for the style transfer, however, since modifying th
 
 \section{Style transfer}
 
-The trained model can be used to transfer style between songs.
+The trained model can be used to transfer style between any songs.
 To do this, the model needs to extract the composition from one song and the style from the other.
 Then, the resulting composition and style are used to predict song information (i.e. mode, tempo and used instruments) and generate the content of the predicted instruments.
 
 The first, most obvious application is to do the exact same thing as for the image style transfer, i.e. having two songs transfer the style from one to the other.
-It can be done both ways at once, therefore doing a "style switch": generating song A in a style of song B, and song B in a style of song A.
+It can be done both ways at once ("switching styles") -- generating song A in a style of song B, and song B in a style of song A.
 In practice however it's much more informative to apply different styles to the same song, to see how they compare.
 
 I used various groups of usually four songs (one for composition and three as style sources) to test the style transfer.
 The quality of the results varies depending on the exact songs.
 In some cases the generated music sounds unnatural, with a sudden changes in loudness, but in other instances the results are quite naturally-sounding.
 For some songs the style transfer is mostly switching tempo and using different instruments for melody, but there are cases when it creates a completely differently sounding arrangement.
+The differences are most notable when considering the songs of significantly different moods (happy vs. sad) since it this case style transfer often involves switching mode and changing tempo, both of which are immediately recognizable changes.
 
-% \subsection{One instruments vs. many instruments}
+Another typical scenario is changing the number of used instruments from one to many and vice versa. This includes, for example, creating orchestration of a solo piano piece, or creating a piano arrangement of a given orchestral song.
+The results are usually not near human-level performance, but are nevertheless sounding decently.
 
+\chapter{Conclusion}
+
+My goal was to create a versatile deep learning model capable of transferring musical style between any two songs in the MIDI format.
+The model I designed supports various instruments and includes the tempo and the mode of the song as its input and output.
+It is able to generate a good-sounding music, introducing changes to the arrangement of the given song.
+In some cases the changes are quite significant, resulting in a notably different arrangement, while in other cases the changes are very basic, like changing the instruments playing the main parts.
+The model uses fairly basic deep learning solutions, so it can effectively serve as a baseline for further, more advanced architectures.
 
 \begin{thebibliography}{99}
 \addcontentsline{toc}{chapter}{Bibliography}
