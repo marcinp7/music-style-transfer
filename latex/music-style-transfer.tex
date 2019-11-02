@@ -45,7 +45,7 @@
 
 \begin{abstract}
     The goal of this work is to create a neural network architecture enabling to create a new arrangement of any song in the MIDI format based on the style extracted from another song.
-    I'm using an architecture based on LSTM layers as time-processing units, also utilizing convolutions.
+    I am using an architecture based on LSTM layers as time-processing units, also utilizing convolutions.
     I define the notion of musical style and composition and train a model that is able to split and later merge them.
     This results in a symbolic music style transfer that supports a wide range of musical instruments and does not require the musical styles to be predefined during training, which makes it much less restrictive than many other solutions.
 \end{abstract}
@@ -85,7 +85,7 @@ Using the MIDI format, as opposed to the raw audio, has two main advantages:
     Thus, working with MIDI files I can focus solely on the style transfer, which makes the task much easier.
     \item
     Direct generating of realistically sounding music is in itself a hard problem.
-    Here I'm assuming that the goal is to generate a MIDI file, which can later be converted into audio using any available synthesizer.
+    Here I am assuming that the goal is to generate a MIDI file, which can later be converted into audio using any available synthesizer.
 \end{enumerate}
 
 \section{Other works}
@@ -97,18 +97,18 @@ All of them, however, are performing a simpler kind of a style transfer or have 
 \subsection{Neural Translation of Musical Style}
 
 In Neural Translation of Musical Style \cite{neural_translation} the authors created a model than can learn to perform any given piano piece in either jazz or classical style.
-The model does this by regression of notes' velocities (loudness), so it's effectively creating an interpretation of a given piano piece.
+The model does this by regression of notes' velocities (loudness), so it is effectively creating an interpretation of a given piano piece.
 The main limitations of this solution is that it only supports one instrument (piano) and cannot create a completely different arrangement.
 
 \subsection{Symbolic Music Genre Transfer with CycleGAN}
 
-In Symbolic Music Genre Transfer with CycleGAN \cite{cyclegan} the described model can create new arrangements but the styles need to be set during training (in this case it's jazz, classic and pop).
+In Symbolic Music Genre Transfer with CycleGAN \cite{cyclegan} the described model can create new arrangements but the styles need to be set during training (in this case it is jazz, classic and pop).
 Also, similarly as in the previous work, it can still only generate piano, and does not support multiple instruments.
 
 \subsection{Play as You Like: Timbre-enhanced Multi-modal Music Style Transfer}
 
 In Timbre-enhanced Multi-modal Music Style Transfer \cite{multimodal} the model can operate on different instruments, but here the main limitation is that the styles need to be set during training (the styles are actually instruments; the authors are using guitar, piano and string quartet).
-Therefore, like in the previous examples, this solution doesn't allow to transfer style between arbitrary songs.
+Therefore, like in the previous examples, this solution does not allow to transfer style between arbitrary songs.
 
 \chapter{Overview and results}
 
@@ -137,9 +137,9 @@ My hypothesis is that this approach will allow for a sensible music style transf
 
 \section{Results}
 
-Using this approach I've been able to achieve interesting results, obtaining a model that can create the new arrangements of given songs, as expected.
+Using this approach I have been able to achieve interesting results, obtaining a model that can create the new arrangements of given songs, as expected.
 The exact characteristics of the generated music varies, from very simple changes in used instruments, to generating a song that is almost unrecognizable from the original, but always sounding like an actual music.
-The quality of the generated music also varies. Sometimes it doesn't sound completely natural, but altogether I consider the results to be satisfying.
+The quality of the generated music also varies. Sometimes it does not sound completely natural, but altogether I consider the results to be satisfying.
 
 \chapter{Framework}
 
@@ -182,8 +182,8 @@ Melody should encode song content (like the input) but with no information about
 Therefore, it must combine and encode all pitched instruments used in a song.
 
 Rhythm contains additional information about the melody (but not explicitly related to specific notes) and features of percussion if it is present in the input song.
-The main reason for introducing rhythm alongside melody is to be able to represent percussion (the only unpitched instrument) but at the same time do not force it if it's not present in the original song.
-The model should be able to add percussion to a song that originally didn't have it.
+The main reason for introducing rhythm alongside melody is to be able to represent percussion (the only unpitched instrument) but at the same time do not force it if it is not present in the original song.
+The model should be able to add percussion to a song that originally did not have it.
 
 I require that there is always at least one pitched instrument used in a song, while the percussion is optional.
 That way both melody and rhythm are always well-defined (there is at least one pitched instrument they can encode).
@@ -297,10 +297,10 @@ The increase in the size is quite significant, since being able to represent 32t
 Here I only introduce the fractions that are necessary to represent triplets ($\frac{1}{3}$ and $\frac{2}{3}$), omitting the rest.
 
 The proposed approach also scales well with addition of more tuplets.
-For example, adding support for quintuplets (division into 5 parts) would only require adding 4 more fractions ($\frac{1}{5}, \frac{2}{5}, \frac{3}{5}$ and $\frac{4}{5}$), resulting in a constant increase in size ($14=10 + 4$ timesteps), while the traditional approach would mean a 5-fold increase in the total size ($120=3\cdot5\cdot8$ timesteps). More complex tuplets are however much less common (and virtually never used in popular music), so I don't use them here.
+For example, adding support for quintuplets (division into 5 parts) would only require adding 4 more fractions ($\frac{1}{5}, \frac{2}{5}, \frac{3}{5}$ and $\frac{4}{5}$), resulting in a constant increase in size ($14=10 + 4$ timesteps), while the traditional approach would mean a 5-fold increase in the total size ($120=3\cdot5\cdot8$ timesteps). More complex tuplets are however much less common (and virtually never used in popular music), so I do not use them here.
 
-It's worth noting that in my approach resulting fractions are not equidistant, meaning that it's not justified to apply convolution along the \emph{note fraction} dimension.
-However, the length of this dimension is not substantial and it's still possible to apply convolution along \emph{bar} and \emph{beat} dimensions, so it's not a big limitation.
+it is worth noting that in my approach resulting fractions are not equidistant, meaning that it is not justified to apply convolution along the \emph{note fraction} dimension.
+However, the length of this dimension is not substantial and it is still possible to apply convolution along \emph{bar} and \emph{beat} dimensions, so it is not a big limitation.
 
 \subsection{Notes representation}
 
@@ -352,7 +352,7 @@ Rhythm is a tensor of shape
 \begin{center}
     (\emph{batch, channel, bar, beat, beat fraction, features}).
 \end{center}
-It's also similar to the input but this time with no \emph{instrument} and no \emph{note} dimensions.
+it is also similar to the input but this time with no \emph{instrument} and no \emph{note} dimensions.
 
 Style is encoded as a regular vector, so it has shape
 \begin{center}
@@ -610,7 +610,7 @@ The loss function measures if the song generated by the model is the same as the
 This hierarchy signifies that the total loss is the average of channels loss and song information loss, channels loss is the average of pitched and unpitched channels loss, etc.
 
 Notes loss is measuring if the model is generating the right sounds.
-Since the desired output is greatly unbalanced (most of all the possible notes will not be played), I'm using a smooth F1 score to measure notes loss.
+Since the desired output is greatly unbalanced (most of all the possible notes will not be played), I am using a smooth F1 score to measure notes loss.
 Smooth $F_1$ score is defined in a standard way, using
 \nopagebreak
 \begin{align}
@@ -657,7 +657,7 @@ All the plots are smoothed using exponential moving average with momentum parame
 
 Figure \ref{fig:pitched_vs_unptiched} shows how pitched and unpitched notes losses compare during training.
 We can see that the model needs around 100 iterations to start learning pitched instruments (with the pitched loss barely below 1), during which time the unpitched loss is already significantly lower (around .7).
-This can be explained by the fact that percussion is in general more repetitive than pitched instruments, so it's possible to achieve that level of the unpitched loss by mostly repeating the most common drum patterns.
+This can be explained by the fact that percussion is in general more repetitive than pitched instruments, so it is possible to achieve that level of the unpitched loss by mostly repeating the most common drum patterns.
 This hypothesis can be confirmed by listening to the music generated by the snapshot of the model near the beginning of the training (for example at the iteration 300, when the unpitched notes loss shortly flattens at the level of .7).
 As it turns out, the generated percussion is indeed very basic, featuring only some typical drum patters found in most of the pop/rock music.
 The fully-trained model can nevertheless generate percussion that is relatively complex.
@@ -694,7 +694,7 @@ The fully-trained model can nevertheless generate percussion that is relatively 
 \section{Reconstructing the song}
 
 The trained neural network can fairly easily reconstruct any song in a way that is immediately recognizable, although often with some differences.
-It's very common for the model to change the exact instrument that is playing some part, for example changing electric guitar to acoustic, or even piano to guitar, especially if there are many instruments used in the song.
+it is very common for the model to change the exact instrument that is playing some part, for example changing electric guitar to acoustic, or even piano to guitar, especially if there are many instruments used in the song.
 These are not a big problems for the style transfer, however, since modifying the original song is our goal.
 
 \section{Style transfer}
@@ -705,7 +705,7 @@ Then, the resulting composition and style are used to predict song information (
 
 The first, most obvious application is to do the exact same thing as for the image style transfer, i.e. having two songs transfer the style from one to the other.
 It can be done both ways at once ("switching styles") -- generating song A in a style of song B, and song B in a style of song A.
-In practice however it's much more informative to apply different styles to the same song, to see how they compare.
+In practice however it is much more informative to apply different styles to the same song, to see how they compare.
 
 I used various groups of usually four songs (one for composition and three as style sources) to test the style transfer.
 The quality of the results varies depending on the exact songs.
