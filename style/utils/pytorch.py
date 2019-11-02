@@ -63,3 +63,32 @@ def cat_with_broadcast(tensors, dim=0):
         expanded_tensors.append(x)
     x = torch.cat(expanded_tensors, dim=dim)
     return x
+
+
+def safe_sqrt(x):
+    if x == 0:
+        return torch.tensor(0., requires_grad=x.requires_grad) * x
+    return torch.sqrt(x)
+
+
+def get_mean(tensors, weights=None, mean_type='arithmetic'):
+    n = len(tensors)
+    if weights is None:
+        weights = np.ones(n) / n
+
+    if mean_type == 'arithmetic':
+        x = sum(w * t for t, w in zip(tensors, weights))
+    elif mean_type == 'harmonic':
+        tensors = [1 / t for t in tensors]
+        x = get_mean(tensors, weights=weights)
+        x = 1 / x
+    elif mean_type == 'geometric':
+        x = torch.stack(tensors).prod(0)
+        x = x ** (1 / n)
+    elif mean_type == 'quadratic':
+        tensors = [t ** 2 for t in tensors]
+        x = get_mean(tensors, weights=weights)
+        x = safe_sqrt(x)
+    else:
+        raise ValueError(f"Unsupported mean type: {mean_type}")
+    return x

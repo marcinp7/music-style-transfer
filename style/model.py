@@ -6,7 +6,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from style.utils.pytorch import Distributed, squash_dims, LSTM, cat_with_broadcast
+from style.utils.pytorch import Distributed, squash_dims, LSTM, cat_with_broadcast, get_mean
 
 epsilon = 1e-7
 
@@ -23,6 +23,9 @@ min_bpm = 50
 max_bpm = 200
 
 bpm_range = max_bpm - min_bpm
+
+mean_type = 'quadratic'
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
 def get_mean_size(*values, factor=1):
@@ -916,3 +919,79 @@ def get_channels_losses(input, target, pitched=True):
             get_accidentals(input), get_accidentals(target), mask)
         return notes_loss, velocity_loss, duration_loss, accidentals_loss
     return notes_loss, velocity_loss, duration_loss
+
+
+def combine_losses(notes_loss, velocity_loss, duration_loss, accidentals_loss=None):
+    # first learn the right notes, then the right velocities
+    notes_loss = get_mean(
+        [notes_loss, velocity_loss], [notes_loss, 1 - notes_loss], mean_type=mean_type)
+    if accidentals_loss is not None:
+        x = get_mean([duration_loss, accidentals_loss, notes_loss], mean_type=mean_type)
+    else:
+        x = get_mean([duration_loss, notes_loss], mean_type=mean_type)
+    return x
+
+
+def get_total_loss(instruments_pred, instruments_target, mode_pred, mode_target, bpm_pred, 
+                   bpm_target, pitched_pred, pitched_target, unpitched_pred=None, 
+                   unpitched_target=None, normalize=False):
+    notes_loss, velocity_loss, duration_loss, accidentals_loss = get_channels_losses(
+        pitched_pred, pitched_target)
+    if normalize:
+        accidentals_loss = torch.tanh(accidentals_loss)
+
+    pitched_loss = combine_losses(notes_loss, velocity_loss, duration_loss, accidentals_loss)
+    pitched_losses = dict(
+        total=pitched_loss,
+        notes_loss=notes_loss,
+        velocity_loss=velocity_loss,
+        duration_loss=duration_loss,
+        accidentals_loss=accidentals_loss,
+    )
+
+    if unpitched_target is not None:
+        unpitched_notes_loss, unpitched_velocity_loss, unpitched_duration_loss =\
+            get_channels_losses(unpitched_pred, unpitched_target, pitched=False)
+
+        unpitched_loss = combine_losses(
+            unpitched_notes_loss, unpitched_velocity_loss, unpitched_duration_loss)
+        unpitched_losses = dict(
+            total=unpitched_loss,
+            notes_loss=unpitched_notes_loss,
+            velocity_loss=unpitched_velocity_loss,
+            duration_loss=unpitched_duration_loss,
+        )
+
+        channels_loss = get_mean([pitched_loss, unpitched_loss], mean_type=mean_type)
+    else:
+        unpitched_losses = None
+        channels_loss = pitched_loss
+
+    channels_losses = dict(
+        total=channels_loss,
+        pitched=pitched_losses,
+        unpitched=unpitched_losses,
+    )
+
+    song_info_pred = (instruments_pred, mode_pred, bpm_pred)
+    song_info_target = (instruments_target, mode_target, bpm_target)
+    instruments_loss, mode_loss, bpm_loss = get_song_info_loss(song_info_pred, song_info_target)
+    if normalize:
+        instruments_loss = torch.tanh(instruments_loss)
+        mode_loss = torch.tanh(mode_loss)
+
+    song_info_loss = get_mean([instruments_loss, mode_loss, bpm_loss], mean_type=mean_type)
+    song_info_losses = dict(
+        total=song_info_loss,
+        instruments_loss=instruments_loss,
+        mode_loss=mode_loss,
+        bpm_loss=bpm_loss,
+    )
+
+    loss = get_mean([channels_loss, song_info_loss], mean_type=mean_type)
+    losses = dict(
+        total=loss,
+        channels_loss=channels_losses,
+        song_info_loss=song_info_losses,
+    )
+    return losses

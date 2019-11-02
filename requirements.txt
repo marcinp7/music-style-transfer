@@ -1,4 +1,8 @@
+flatten-dict
 mido
 numpy
+pandas
 python-rtmidi
+scikit-learn
 torch
+tqdm
