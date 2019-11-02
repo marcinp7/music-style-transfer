@@ -46,7 +46,7 @@
 \begin{abstract}
     The goal of this work is to create a neural network architecture enabling to create a new arrangement of any song in the MIDI format based on the style extracted from another song.
     I am using an architecture based on LSTM layers as time-processing units, also utilizing convolutions.
-    I define the notion of musical style and composition and train a model that is able to split and later merge them.
+    I define the notion of a musical style and composition and train a model that is able to split and later merge them.
     This results in a symbolic music style transfer that supports a wide range of musical instruments and does not require the musical styles to be predefined during training, which makes it much less restrictive than many other solutions.
 \end{abstract}
 
@@ -62,17 +62,17 @@ The analogous style transfer done for music is a much less explored topic and it
 
 \section{Goal statement}
 
-In this paper the goal is to define a sensible notion of musical style, and create a model that can create a different arrangement for any song based on style extracted from any other song.
+In this paper the goal is to define a sensible notion of a musical style, and create a model that can create a different arrangement for any song based on style extracted from any other song.
 The music used for training is assumed to be in the MIDI format and can use any range of instruments.
 The instruments supported by the model must be set during training, but the supported styles do not -- we want the trained model to be able to extract style from any song.
 
 In summary, I aim for the model that:
 
 \begin{itemize}
-    \item Supports multiple instruments and is able to change them, if necessary
-    \item Supports various time signatures (most importantly $4\atop4$ and $3\atop4$)
-    \item Is able to change the tempo and the mode of the song (major or minor)
-    \item Is able to extract the style from any song (in particular the supported styles are not hard-set during training)
+    \item Supports multiple instruments and is able to change them, if necessary.
+    \item Supports various time signatures (most importantly $4\atop4$ and $3\atop4$).
+    \item Is able to change the tempo and the mode of the song (major or minor).
+    \item Is able to extract the style from any song (in particular the supported styles are not hard-set during training).
 \end{itemize}
 
 Note that other common approach to music generation is to perform it on raw waveform, most typically working with spectrograms and utilizing Fourier Transform, as in \cite{music_generation}.
@@ -117,16 +117,16 @@ Therefore, like in the previous examples, this solution does not allow to transf
 For the musical style transfer, the two main notions concerning songs are composition and style.
 I start by giving a rough definition of them.
 
-Composition is any information about a song that is related to a specific moment in time, e.g. if the music gets louder or some instrument starts playing.
+Composition is any information about a song that is related to a specific moment in time, e.g., if the music gets louder or some instrument starts playing.
 The most important part of a composition is the melody (played by one or more instruments).
 
-The style, on the other hand, is information not related to any specific moment in time, e.g. the general mood of the song or the way specific instruments are used (for example, which instruments play the main melodic line and which ones create a backing).
+The style, on the other hand, is information not related to any specific moment in time, e.g., the general mood of the song or the way specific instruments are used (for example, which instruments play the main melodic line and which ones create a backing).
 
 Since music is a form of art, even though it can be understood and formally described, it will always be at least partly subjective.
 This means that the exact way to split songs into composition and style is not unique (for example, used instruments may naturally be considered part of style, but they can also change in time).
 The main assumption, however, is that composition-style splitting can be performed in \emph{some} fashion which can be learned by a complex enough model.
 
-Since any song can be naturally interpreted as a time sequence, I will use a recurrent neural network as a model for splitting the input song into composition and style.
+Since any song can be naturally interpreted as a time series, I will use a recurrent neural network as a model for splitting the input song into composition and style.
 Composition, just like the input, is a time series, but simpler, with less features.
 The style, on the other hand, is a single vector representing the whole song.
 During training, the model splits the input song into composition and style, and then combines them to recreate the original song.
@@ -151,7 +151,7 @@ The machine learning framework I use is PyTorch, along with mido -- a Python lib
 \section{Data}
 
 The dataset I use is The Lakh MIDI Dataset\footnote{https://colinraffel.com/projects/lmd/}.
-It contains over 100,000 songs in the MIDI format and covers various genres, including pop, rock or classical music.
+It contains over 100,000 songs in the MIDI format and covers various genres, including pop, rock and classical music.
 
 \chapter{Data flow}
 
@@ -204,7 +204,7 @@ Note that the set of supported instruments can be arbitrarily large but needs to
 
 \section{Style application}
 
-At this stage the inputs are composition (i.e. melody and rhythm) and style from the first stage.
+At this stage the inputs are composition (i.e., melody and rhythm) and style from the first stage.
 The output is the song content for each of the used instruments.
 The generated song content should coincide with the input from the first stage.
 In other words, the model must reconstruct the original song.
@@ -257,7 +257,7 @@ Figure \ref{fig:data_flow} depicts the data flow in all three stages.
 
 \chapter{Data representation}
 
-In MIDI format, the song is encoded as a sequence of events messages.
+In the MIDI format, the song is encoded as a sequence of events messages.
 Messages can contain instructions like setting the tempo or playing a note.
 Note events are assigned to one of the 16 channels -- each of those channels can represent a different instrument.
 
@@ -273,7 +273,7 @@ The \emph{bar}, \emph{beat} and \emph{beat fraction} dimensions point to the exa
 
 \subsection{Specifying time}
 
-I assume that the time signature cannot change, i.e. the number of the beats in a bar is constant throughout the song (usually 3 or 4).
+I assume that the time signature cannot change, i.e., the number of beats in a bar is constant throughout the song (usually 3 or 4).
 The \emph{bar} and \emph{beat} dimensions denote in which bar and at which beat the note should play.
 The \emph{beat fraction} dimension is specifying the exact moment during the beat.
 
@@ -291,7 +291,7 @@ While division into powers of 2 is the most common in music, many songs also use
 Inclusion of fractions with denominator 3 allows for the exact representation of them, which otherwise would need to be approximated using fractions with denominator 8.
 More fractions could be added to allow for representing faster melodies, but these 10 are enough for most songs.
 
-The typical way of splitting the beat in neural music generation is to simply divide it into timesteps of equal length, e.g. into 12 parts \cite{clara}.
+The typical way of splitting the beat in neural music generation is to simply divide it into timesteps of equal length, e.g., into 12 parts \cite{clara}.
 The downside of this approach is that it creates many "unnecessary" fractions (like $\frac{1}{12}$), which are not typically used, so they mainly only increase the size of the MIDI file representation.
 The increase in the size is quite significant, since being able to represent 32th notes using this approach would require the denominator of $24=3\cdot8$, resulting in the whole input being over two times bigger.
 Here I only introduce the fractions that are necessary to represent triplets ($\frac{1}{3}$ and $\frac{2}{3}$), omitting the rest.
@@ -327,7 +327,7 @@ I use fairly simple heuristics based on the Krumhansl-Schmuckler key-finding alg
 \subsection{Note features}
 
 The same format is used for both percussion and pitched instruments.
-However, the number of notes and note features (i.e. lengths of dimensions \emph{note} and \emph{note features} respectively) is different for percussion and for pitched instruments, so two tensors must be used: one for pitched instruments and one (possibly empty) for percussion.
+However, the number of notes and note features (i.e., lengths of dimensions \emph{note} and \emph{note features} respectively) is different for percussion and for pitched instruments, so two tensors must be used: one for pitched instruments and one (possibly empty) for percussion.
 
 Note features for pitched instruments are:
 \begin{itemize}
@@ -620,7 +620,7 @@ Smooth $F_1$ score is defined in a standard way, using
 \end{align}
 
 where $p,t\in[0,1]$ are prediction and ground truth respectively, interpreted as fuzzy logical values.
-In case when $p$ and $t$ can only take discrete values of 0 or 1, this gives a standard definition of the $F_1$ score.
+In the case when $p$ and $t$ can only take discrete values of 0 or 1, this gives a standard definition of the $F_1$ score.
 Thus, it is a generalization of the $F_1$ score compatible with gradient descent.
 In our case, the notes' fuzzy logical values are defined from velocity (1 if the note is played with maximum possible velocity, and 0 if the note is not played at all).
 
@@ -641,7 +641,7 @@ Then, the normalized components are averaged using quadratic mean to yield the t
 The model was trained for 5000 iterations using the Adam optimizer \cite{adam}.
 In each iteration the input is a random song from the dataset.
 Figure \ref{fig:total} shows total loss during training, while figures \ref{fig:channels} and \ref{fig:song_info} show specific components of the loss function.
-All the plots are smoothed using exponential moving average with momentum parameter equal to .99 and initial bias equal to 1 (i.e. the maximum possible error).
+All the plots are smoothed using exponential moving average with momentum parameter equal to .99 and initial bias equal to 1 (i.e., the maximum possible error).
 
 \begin{figure}
     \centering
@@ -701,9 +701,9 @@ These are not a big problems for the style transfer, however, since modifying th
 
 The trained model can be used to transfer style between any songs.
 To do this, the model needs to extract the composition from one song and the style from the other.
-Then, the resulting composition and style are used to predict song information (i.e. mode, tempo and used instruments) and generate the content of the predicted instruments.
+Then, the resulting composition and style are used to predict song information (i.e., mode, tempo and used instruments) and generate the content of the predicted instruments.
 
-The first, most obvious application is to do the exact same thing as for the image style transfer, i.e. having two songs transfer the style from one to the other.
+The first, most obvious application is to do the exact same thing as for the image style transfer, i.e., having two songs transfer the style from one to the other.
 It can be done both ways at once ("switching styles") -- generating song A in a style of song B, and song B in a style of song A.
 In practice however it is much more informative to apply different styles to the same song, to see how they compare.
 
@@ -727,15 +727,17 @@ The model uses fairly basic deep learning solutions, so it can effectively serve
 \begin{thebibliography}{99}
 \addcontentsline{toc}{chapter}{Bibliography}
 
-\bibitem{image_style_transfer} Leon A. Gatys, Alexander S. Ecker, Matthias Bethge, \textit{Image Style Transfer Using Convolutional Neural Networks}, \url{https://www.cv-foundation.org/openaccess/content_cvpr_2016/papers/Gatys_Image_Style_Transfer_CVPR_2016_paper.pdf}.
+\bibliography{references.bib}{}
+
+\bibitem{image_style_transfer} Leon A. Gatys, Alexander S. Ecker, Matthias Bethge, \textit{Image Style Transfer Using Convolutional Neural Networks}, \url{https://ieeexplore.ieee.org/document/7780634}.
 
 \bibitem{music_generation} Piotr Kozakowski, Bartosz Michalak, \textit{Music generation using artificial neural networks}.
 
-\bibitem{neural_translation} Iman Malik, Carl Henrik Ek, \textit{Neural Translation of Musical Style}, \url{https://arxiv.org/abs/1708.03535}.
+\bibitem{neural_translation} Iman Malik, Carl Henrik Ek, \textit{Neural Translation of Musical Style}, abs/1708.03535.
 
-\bibitem{cyclegan} Gino Brunner, Yuyi Wang, Roger Wattenhofer, Sumu Zhao, \textit{Symbolic Music Genre Transfer with CycleGAN}, \url{https://arxiv.org/abs/1809.07575}.
+\bibitem{cyclegan} Gino Brunner, Yuyi Wang, Roger Wattenhofer, Sumu Zhao, \textit{Symbolic Music Genre Transfer with CycleGAN}, abs/1809.07575.
 
-\bibitem{multimodal} Chien-Yu Lu, Min-Xin Xue, Chia-Che Chang, Che-Rung Lee, Li Su, \textit{Play as You Like: Timbre-enhanced Multi-modal Music Style Transfer}, \url{https://arxiv.org/abs/1811.12214}.
+\bibitem{multimodal} Chien-Yu Lu, Min-Xin Xue, Chia-Che Chang, Che-Rung Lee, Li Su, \textit{Play as You Like: Timbre-enhanced Multi-modal Music Style Transfer}, abs/1811.12214.
 
 \bibitem{clara} Christine Payne, OpenAI Scholars Program, \textit{Clara: Generating Polyphonic and Multi-Instrument Music Using an AWD-LSTM Architecture}, \url{http://www.christinemcleavey.com/files/clara-musical-lstm.pdf}.
 
